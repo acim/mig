@@ -1,0 +1,7 @@
+.git
+Dockerfile
+LICENSE-APACHE
+LICENSE-MIT
+Makefile
+README.md
+docker-compose.yml
