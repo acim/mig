@@ -23,7 +23,7 @@ func (d *Mig) Migrate(ctx context.Context) error {
 	}
 
 	defer func() {
-		d.db.Unlock(ctx)
+		d.db.Unlock(ctx) //nolint:errcheck
 	}()
 
 	if err := d.db.CreateSchemaMigrationsTable(ctx); err != nil {
