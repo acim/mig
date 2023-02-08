@@ -34,7 +34,9 @@ func NewPgx4(conn *pgxpool.Conn, opts ...Pgx4Option) *Pgx4 {
 }
 
 func (db *Pgx4) Lock(ctx context.Context) error {
-	db.setLockID(ctx)
+	if err := db.setLockID(ctx); err != nil {
+		return fmt.Errorf("set lock id: %w", err)
+	}
 
 	q := "SELECT pg_advisory_lock($1)"
 
