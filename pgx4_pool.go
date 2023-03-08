@@ -119,6 +119,8 @@ func (db *Pgx4) Unlock(ctx context.Context) error {
 		return fmt.Errorf("exec: %w", err)
 	}
 
+	db.conn.Release()
+
 	return nil
 }
 
