@@ -6,10 +6,5 @@ services:
     environment:
       - POSTGRES_DB=mig
       - POSTGRES_HOST_AUTH_METHOD=trust
-  mig:
-    build:
-      context: .
-    depends_on:
-      - postgres
-    stdin_open: true
-    tty: true
+    ports:
+      - 5432:5432

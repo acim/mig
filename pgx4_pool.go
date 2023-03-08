@@ -18,16 +18,13 @@ type Pgx4 struct {
 }
 
 func NewPgx4(conn *pgxpool.Conn, opts ...Pgx4Option) *Pgx4 {
-	db := &Pgx4{
-		conn: conn,
+	db := &Pgx4{ //nolint:exhaustruct
+		table: "schema_migrations",
+		conn:  conn,
 	}
 
 	for _, opt := range opts {
 		opt(db)
-	}
-
-	if db.table == "" {
-		db.table = "schema_migrations"
 	}
 
 	return db
@@ -79,7 +76,6 @@ func (db *Pgx4) SetLastVersion(ctx context.Context, lastVersion uint64) error {
 	ct, err := db.conn.Exec(ctx, q, lastVersion)
 	if err != nil {
 		return fmt.Errorf("exec: %w", err)
-
 	}
 
 	if ct.RowsAffected() == 1 {
@@ -90,7 +86,6 @@ func (db *Pgx4) SetLastVersion(ctx context.Context, lastVersion uint64) error {
 
 	if _, err := db.conn.Exec(ctx, q, lastVersion); err != nil {
 		return fmt.Errorf("exec: %w", err)
-
 	}
 
 	return nil
@@ -124,6 +119,8 @@ func (db *Pgx4) Unlock(ctx context.Context) error {
 		return fmt.Errorf("exec: %w", err)
 	}
 
+	db.conn.Release()
+
 	return nil
 }
 
@@ -139,7 +136,7 @@ func (db *Pgx4) setLockID(ctx context.Context) error {
 	name := strings.Join([]string{database, schema, db.table}, "\x00")
 	sum := crc32.ChecksumIEEE([]byte(name))
 
-	sum = sum * uint32(2854263694)
+	sum *= uint32(2854263694) //nolint:gomnd
 
 	db.lockID = fmt.Sprint(sum)
 

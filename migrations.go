@@ -5,6 +5,8 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -18,12 +20,27 @@ var (
 
 type Migrations []Migration
 
+func FromDir(path string) (Migrations, error) {
+	files, err := os.ReadDir(path)
+	if err != nil {
+		return nil, fmt.Errorf("read dir: %w", err)
+	}
+
+	fs := os.DirFS(path)
+
+	return migrations(fs, files, "")
+}
+
 func FromEmbedFS(fs embed.FS, path string) (Migrations, error) {
 	files, err := fs.ReadDir(path)
 	if err != nil {
 		return nil, fmt.Errorf("read dir: %w", err)
 	}
 
+	return migrations(fs, files, path)
+}
+
+func migrations(fS fs.FS, files []fs.DirEntry, path string) (Migrations, error) {
 	seen := make(map[uint64]bool, len(files))
 	ms := make(Migrations, 0, len(files))
 
@@ -52,7 +69,7 @@ func FromEmbedFS(fs embed.FS, path string) (Migrations, error) {
 		name = strings.TrimPrefix(name, "_")
 		name = strings.TrimSuffix(name, ext)
 
-		sql, err := fs.ReadFile(filepath.Join(path, fileName))
+		sql, err := fs.ReadFile(fS, filepath.Join(path, fileName))
 		if err != nil {
 			return nil, fmt.Errorf("read file: %w", err)
 		}
