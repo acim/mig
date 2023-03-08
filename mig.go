@@ -5,6 +5,15 @@ import (
 	"fmt"
 )
 
+type Database interface {
+	Lock(ctx context.Context) error
+	CreateSchemaMigrationsTable(ctx context.Context) error
+	LastVersion(ctx context.Context) (uint64, error)
+	SetLastVersion(ctx context.Context, lastVersion uint64) error
+	RunMigration(ctx context.Context, query string) error
+	Unlock(ctx context.Context) error
+}
+
 type Mig struct {
 	ms Migrations
 	db Database
@@ -30,13 +39,13 @@ func (d *Mig) Migrate(ctx context.Context) error {
 		return fmt.Errorf("create schema migrations table: %w", err)
 	}
 
-	lv, err := d.db.LastVersion(ctx)
+	lastVersion, err := d.db.LastVersion(ctx)
 	if err != nil {
 		return fmt.Errorf("last version: %w", err)
 	}
 
 	for _, m := range d.ms {
-		if m.Version > lv {
+		if m.Version > lastVersion {
 			if err := d.db.RunMigration(ctx, m.SQL); err != nil {
 				return fmt.Errorf("run migration %d: %w", m.Version, err)
 			}

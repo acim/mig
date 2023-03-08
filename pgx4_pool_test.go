@@ -8,27 +8,20 @@ import (
 	"go.acim.net/mig"
 )
 
-const dsn = "postgres://postgres@postgres:5432/mig"
+const dsn = "postgres://postgres@localhost:5432/mig"
 
-func TestCreateSchemaMigrationsTable(t *testing.T) {
+func TestPgxV4(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("skipping long test")
+	}
+
 	ctx := context.Background()
 
-	cfg, err := pgxpool.ParseConfig(dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
+	conn, cleanup := pool(ctx, t)
 
-	pool, err := pgxpool.ConnectConfig(ctx, cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer pool.Close()
-
-	conn, err := pool.Acquire(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	defer cleanup()
 
 	db := mig.NewPgx4(conn)
 
@@ -36,11 +29,16 @@ func TestCreateSchemaMigrationsTable(t *testing.T) {
 		t.Errorf("Lock(): %v", err)
 	}
 
-	if err := db.CreateSchemaMigrationsTable(context.Background()); err != nil {
+	if err := db.CreateSchemaMigrationsTable(ctx); err != nil {
 		t.Errorf("CreateSchemaMigrationsTable(): %v", err)
 	}
 
-	v, err := db.LastVersion(ctx)
+	var (
+		v   uint64
+		err error
+	)
+
+	v, err = db.LastVersion(ctx)
 	if err != nil {
 		t.Errorf("LastVersion(): %v", err)
 	}
@@ -55,17 +53,63 @@ func TestCreateSchemaMigrationsTable(t *testing.T) {
 
 	q := "SELECT version FROM schema_migrations"
 
-	var version uint64
-
-	if err := conn.QueryRow(ctx, q).Scan(&version); err != nil {
+	if err := conn.QueryRow(ctx, q).Scan(&v); err != nil {
 		t.Errorf("Scan(): %v", err)
 	}
 
-	if version != 1 {
-		t.Errorf("SetLastVersion()=%d; want %d", version, 1)
+	if v != 1 {
+		t.Errorf("SetLastVersion()=%d; want %d", v, 1)
 	}
 
 	if err := db.Unlock(ctx); err != nil {
 		t.Errorf("Unlock(): %v", err)
+	}
+}
+
+func TestRunMigration(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("skipping long test")
+	}
+
+	ctx := context.Background()
+
+	conn, cleanup := pool(ctx, t)
+
+	defer cleanup()
+
+	db := mig.NewPgx4(conn, mig.WithCustomTable("mig"))
+
+	if err := db.RunMigration(ctx, "CREATE TABLE dummy (version serial); DROP TABLE dummy"); err != nil {
+		t.Fatalf("run migration: %v", err)
+	}
+
+	if err := db.RunMigration(ctx, "CREATE TABLE"); err == nil {
+		t.Fatal("run migration with broken query: want error; got no error")
+	}
+}
+
+func pool(ctx context.Context, t *testing.T) (*pgxpool.Conn, func()) {
+	t.Helper()
+
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+
+	pool, err := pgxpool.ConnectConfig(ctx, cfg)
+	if err != nil {
+		t.Fatalf("connect config: %v", err)
+	}
+
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+
+	return conn, func() {
+		conn.Release()
+		pool.Close()
 	}
 }
