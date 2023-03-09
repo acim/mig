@@ -1,29 +1,45 @@
-package mig_test
+package mig
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/jackc/pgx/v4/pgxpool"
-	"go.acim.net/mig"
 )
 
 const dsn = "postgres://postgres@localhost:5432/mig"
 
-func TestPgxV4(t *testing.T) {
+var (
+	_ pgxCmds  = (*pgx4pool)(nil)
+	_ pgxCmds  = (*pgx5pool)(nil)
+	_ pgxCmds  = (*pgx4conn)(nil)
+	_ Database = (*pgxDB)(nil)
+)
+
+func TestPgxPool(t *testing.T) { //nolint:cyclop
 	t.Parallel()
 
 	if testing.Short() {
 		t.Skip("skipping long test")
 	}
 
+	const tableName = "foo"
+
 	ctx := context.Background()
 
-	conn, cleanup := pool(ctx, t)
+	pool := pgx4Pool(ctx, t)
 
-	defer cleanup()
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire connection: %v", err)
+	}
 
-	db := mig.NewPgx4(conn)
+	defer conn.Release()
+
+	db := newPgxDB(&pgx4pool{
+		conn: conn,
+	}, tableName)
 
 	if err := db.Lock(ctx); err != nil {
 		t.Errorf("Lock(): %v", err)
@@ -33,10 +49,7 @@ func TestPgxV4(t *testing.T) {
 		t.Errorf("CreateSchemaMigrationsTable(): %v", err)
 	}
 
-	var (
-		v   uint64
-		err error
-	)
+	var v uint64
 
 	v, err = db.LastVersion(ctx)
 	if err != nil {
@@ -51,9 +64,9 @@ func TestPgxV4(t *testing.T) {
 		t.Errorf("SetLastVersion(): %v", err)
 	}
 
-	q := "SELECT version FROM schema_migrations"
+	q := fmt.Sprintf("SELECT version FROM %s", tableName)
 
-	if err := conn.QueryRow(ctx, q).Scan(&v); err != nil {
+	if err := pool.QueryRow(ctx, q).Scan(&v); err != nil {
 		t.Errorf("Scan(): %v", err)
 	}
 
@@ -75,11 +88,18 @@ func TestRunMigration(t *testing.T) {
 
 	ctx := context.Background()
 
-	conn, cleanup := pool(ctx, t)
+	pool := pgx4Pool(ctx, t)
 
-	defer cleanup()
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire connection: %v", err)
+	}
 
-	db := mig.NewPgx4(conn, mig.WithCustomTable("mig"))
+	defer conn.Release()
+
+	db := newPgxDB(&pgx4pool{
+		conn: conn,
+	}, "bar")
 
 	if err := db.RunMigration(ctx, "CREATE TABLE dummy (version serial); DROP TABLE dummy"); err != nil {
 		t.Fatalf("run migration: %v", err)
@@ -90,7 +110,7 @@ func TestRunMigration(t *testing.T) {
 	}
 }
 
-func pool(ctx context.Context, t *testing.T) (*pgxpool.Conn, func()) {
+func pgx4Pool(ctx context.Context, t *testing.T) *pgxpool.Pool {
 	t.Helper()
 
 	cfg, err := pgxpool.ParseConfig(dsn)
@@ -103,13 +123,5 @@ func pool(ctx context.Context, t *testing.T) (*pgxpool.Conn, func()) {
 		t.Fatalf("connect config: %v", err)
 	}
 
-	conn, err := pool.Acquire(ctx)
-	if err != nil {
-		t.Fatalf("acquire: %v", err)
-	}
-
-	return conn, func() {
-		conn.Release()
-		pool.Close()
-	}
+	return pool
 }
