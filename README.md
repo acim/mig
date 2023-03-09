@@ -20,16 +20,27 @@ This project is in an early stage so you can expect API breaking changes until t
 
 ## Naming migration files
 
+```txt
 1-initial.sql
 2-alter-some-table.sql
 ...
+```
 
 or
 
+```txt
 001-initial.sql
 002-alter-some-table.sql
+```
 
-**mig** will try to parse the number prefix in the correct order without matter if it is prefixed with zeroes or not.
+**mig** will try to parse the number prefix in the correct order without matter if it is prefixed with zeroes or not. So, in theory, the following migration files should also work as expected:
+
+```txt
+001-initial.sql
+2-alter-some-table.sql
+03-insert-some-fixed-data.sql
+...
+```
 
 ## Run tests
 
