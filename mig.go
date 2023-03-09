@@ -3,6 +3,12 @@ package mig
 import (
 	"context"
 	"fmt"
+	"time"
+
+	pgx4 "github.com/jackc/pgx/v4"
+	pgxPoolV4 "github.com/jackc/pgx/v4/pgxpool"
+	pgx5 "github.com/jackc/pgx/v5"
+	pgxPoolV5 "github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Database interface {
@@ -15,15 +21,92 @@ type Database interface {
 }
 
 type Mig struct {
-	ms Migrations
-	db Database
+	timeout time.Duration
+	ms      Migrations
+	db      Database
+	table   string
 }
 
-func NewMig(ms Migrations, db Database) *Mig {
-	return &Mig{
-		ms: ms,
-		db: db,
+func New(ms Migrations, db Database, opts ...Option) *Mig {
+	m := &Mig{ //nolint:exhaustruct
+		ms:    ms,
+		db:    db,
+		table: "schema_migrations",
 	}
+
+	for _, opt := range opts {
+		opt(m)
+	}
+
+	return m
+}
+
+func FromPgxV4Pool(ms Migrations, pool *pgxPoolV4.Pool, opts ...Option) (*Mig, func(), error) {
+	m := New(ms, nil, opts...)
+
+	ctx := context.Background()
+	cancel := func() {}
+
+	if m.timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, m.timeout)
+	}
+
+	defer cancel()
+
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("acquire connection: %w", err)
+	}
+
+	m.db = newPgxDB(&pgx4pool{
+		conn: conn,
+	}, m.table)
+
+	return m, conn.Release, nil
+}
+
+func FromPgxV5Pool(ms Migrations, pool *pgxPoolV5.Pool, opts ...Option) (*Mig, func(), error) {
+	m := New(ms, nil, opts...)
+
+	ctx := context.Background()
+	cancel := func() {}
+
+	if m.timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, m.timeout)
+	}
+
+	defer cancel()
+
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("acquire connection: %w", err)
+	}
+
+	m.db = newPgxDB(&pgx5pool{
+		conn: conn,
+	}, m.table)
+
+	return m, conn.Release, nil
+}
+
+func FromPgxV4(ms Migrations, conn *pgx4.Conn, opts ...Option) *Mig {
+	m := New(ms, nil, opts...)
+
+	m.db = newPgxDB(&pgx4conn{
+		conn: conn,
+	}, m.table)
+
+	return m
+}
+
+func FromPgxV5(ms Migrations, conn *pgx5.Conn, opts ...Option) *Mig {
+	m := New(ms, nil, opts...)
+
+	m.db = newPgxDB(&pgx5conn{
+		conn: conn,
+	}, m.table)
+
+	return m
 }
 
 func (d *Mig) Migrate(ctx context.Context) error {
@@ -57,4 +140,18 @@ func (d *Mig) Migrate(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+type Option func(*Mig)
+
+func WithCustomTable(name string) Option {
+	return func(m *Mig) {
+		m.table = name
+	}
+}
+
+func WithAcquireConnectionTimeout(timeout time.Duration) Option {
+	return func(m *Mig) {
+		m.timeout = timeout
+	}
 }

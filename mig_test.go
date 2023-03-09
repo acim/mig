@@ -17,7 +17,7 @@ func TestMigrate(t *testing.T) {
 
 	db := &dbFake{} //nolint:exhaustruct
 
-	m := mig.NewMig(ms, db)
+	m := mig.New(ms, db)
 
 	if err := m.Migrate(context.Background()); err != nil {
 		t.Fatalf("migrate: %v", err)
