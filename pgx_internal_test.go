@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/jackc/pgx/v4/pgxpool"
+	pgxPoolV4 "github.com/jackc/pgx/v4/pgxpool"
+	pgxPoolV5 "github.com/jackc/pgx/v5/pgxpool"
 )
 
 const dsn = "postgres://postgres@localhost:5432/mig"
@@ -79,7 +80,7 @@ func TestPgxPool(t *testing.T) { //nolint:cyclop
 	}
 }
 
-func TestRunMigration(t *testing.T) {
+func TestPoolV4RunMigration(t *testing.T) {
 	t.Parallel()
 
 	if testing.Short() {
@@ -99,9 +100,9 @@ func TestRunMigration(t *testing.T) {
 
 	db := newPgxDB(&pgx4pool{
 		conn: conn,
-	}, "bar")
+	}, "")
 
-	if err := db.RunMigration(ctx, "CREATE TABLE dummy (version serial); DROP TABLE dummy"); err != nil {
+	if err := db.RunMigration(ctx, "CREATE TABLE bar (version serial); DROP TABLE bar"); err != nil {
 		t.Fatalf("run migration: %v", err)
 	}
 
@@ -110,15 +111,62 @@ func TestRunMigration(t *testing.T) {
 	}
 }
 
-func pgx4Pool(ctx context.Context, t *testing.T) *pgxpool.Pool {
+func TestPoolV5RunMigration(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("skipping long test")
+	}
+
+	ctx := context.Background()
+
+	pool := pgx5Pool(ctx, t)
+
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire connection: %v", err)
+	}
+
+	defer conn.Release()
+
+	db := newPgxDB(&pgx5pool{
+		conn: conn,
+	}, "")
+
+	if err := db.RunMigration(ctx, "CREATE TABLE baz (version serial); DROP TABLE baz"); err != nil {
+		t.Fatalf("run migration: %v", err)
+	}
+
+	if err := db.RunMigration(ctx, "CREATE TABLE"); err == nil {
+		t.Fatal("run migration with broken query: want error; got no error")
+	}
+}
+
+func pgx4Pool(ctx context.Context, t *testing.T) *pgxPoolV4.Pool {
 	t.Helper()
 
-	cfg, err := pgxpool.ParseConfig(dsn)
+	cfg, err := pgxPoolV4.ParseConfig(dsn)
 	if err != nil {
 		t.Fatalf("parse config: %v", err)
 	}
 
-	pool, err := pgxpool.ConnectConfig(ctx, cfg)
+	pool, err := pgxPoolV4.ConnectConfig(ctx, cfg)
+	if err != nil {
+		t.Fatalf("connect config: %v", err)
+	}
+
+	return pool
+}
+
+func pgx5Pool(ctx context.Context, t *testing.T) *pgxPoolV5.Pool {
+	t.Helper()
+
+	cfg, err := pgxPoolV5.ParseConfig(dsn)
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+
+	pool, err := pgxPoolV5.NewWithConfig(ctx, cfg)
 	if err != nil {
 		t.Fatalf("connect config: %v", err)
 	}
