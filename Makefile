@@ -1,4 +1,4 @@
-.PHONY: lint test test-all update
+.PHONY: lint test update
 
 lint:
 	@golangci-lint run \
@@ -23,10 +23,7 @@ stop:
 	@docker-compose down
 
 test:
-	@go test -race -short ./...
-
-test-all:
-	@go test -coverprofile=coverage.out ./...
+	@go test -race -coverprofile=coverage.out ./...
 	@go tool cover -func coverage.out
 
 update:
