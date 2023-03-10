@@ -2,6 +2,7 @@ package mig
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -110,12 +111,13 @@ func FromPgxV5(ms Migrations, conn *pgx5.Conn, opts ...Option) *Mig {
 }
 
 func (d *Mig) Migrate(ctx context.Context) error {
-	if err := d.db.Lock(ctx); err != nil {
+	err := d.db.Lock(ctx)
+	if err != nil {
 		return fmt.Errorf("lock: %w", err)
 	}
 
 	defer func() {
-		d.db.Unlock(ctx) //nolint:errcheck
+		err = errors.Join(err, d.db.Unlock(ctx))
 	}()
 
 	if err := d.db.CreateSchemaMigrationsTable(ctx); err != nil {
