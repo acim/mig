@@ -132,7 +132,7 @@ func (d *Mig) Migrate(ctx context.Context) error {
 	for _, m := range d.ms {
 		if m.Version > lastVersion {
 			if err := d.db.RunMigration(ctx, m.SQL); err != nil {
-				return fmt.Errorf("run migration %d: %w", m.Version, err)
+				return fmt.Errorf("run migration %d from file %s: %w", m.Version, m.Path, err)
 			}
 
 			if err := d.db.SetLastVersion(ctx, m.Version); err != nil {

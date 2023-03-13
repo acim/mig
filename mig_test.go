@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	pgx4 "github.com/jackc/pgx/v4"
 	pgx4pool "github.com/jackc/pgx/v4/pgxpool"
@@ -152,7 +153,8 @@ func ExampleFromPgxV5Pool() {
 		panic(err)
 	}
 
-	migrator, cleanup, err := mig.FromPgxV5Pool(migrations, pool, mig.WithCustomTable("eve"))
+	migrator, cleanup, err := mig.FromPgxV5Pool(migrations, pool, mig.WithCustomTable("eve"),
+		mig.WithAcquireConnectionTimeout(time.Second))
 	if err != nil {
 		panic(err)
 	}
