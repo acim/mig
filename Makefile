@@ -4,6 +4,7 @@ lint:
 	@golangci-lint run \
 		--enable-all \
 		--disable deadcode \
+		--disable depguard \
 		--disable exhaustivestruct \
 		--disable golint \
 		--disable ifshort \
