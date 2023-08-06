@@ -60,12 +60,12 @@ func TestFromEmbedFS(t *testing.T) {
 
 func want() mig.Migrations {
 	return mig.Migrations{
-		{
+		{ //nolint:exhaustruct
 			Version: 1,
 			Name:    "",
 			Path:    "1.sql",
 		},
-		{
+		{ //nolint:exhaustruct
 			Version: 2,
 			Name:    "",
 			Path:    "02.sql",
