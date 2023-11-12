@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"strconv"
 	"strings"
 
 	pgx4 "github.com/jackc/pgx/v4"
@@ -152,7 +153,7 @@ func (db *pgxDB) setLockID(ctx context.Context) error {
 
 	sum *= uint32(2854263694) //nolint:gomnd
 
-	db.lockID = fmt.Sprint(sum)
+	db.lockID = strconv.FormatUint(uint64(sum), 10)
 
 	return nil
 }
