@@ -2,7 +2,6 @@ package mig
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	pgxPoolV4 "github.com/jackc/pgx/v4/pgxpool"
@@ -65,7 +64,7 @@ func TestPgxPool(t *testing.T) { //nolint:cyclop
 		t.Errorf("SetLastVersion(): %v", err)
 	}
 
-	q := fmt.Sprintf("SELECT version FROM %s", tableName)
+	q := "SELECT version FROM " + tableName
 
 	if err := pool.QueryRow(ctx, q).Scan(&v); err != nil {
 		t.Errorf("Scan(): %v", err)

@@ -72,7 +72,7 @@ func (db *pgxDB) CreateSchemaMigrationsTable(ctx context.Context) error {
 }
 
 func (db *pgxDB) LastVersion(ctx context.Context) (uint64, error) {
-	q := fmt.Sprintf("SELECT version FROM %s", db.table)
+	q := "SELECT version FROM " + db.table
 
 	var version uint64
 
