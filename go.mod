@@ -3,8 +3,8 @@ module go.acim.net/mig
 go 1.20
 
 require (
-	github.com/jackc/pgx/v4 v4.18.2
-	github.com/jackc/pgx/v5 v5.5.4
+	github.com/jackc/pgx/v4 v4.18.3
+	github.com/jackc/pgx/v5 v5.5.5
 )
 
 require (
