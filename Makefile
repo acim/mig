@@ -3,12 +3,16 @@
 lint:
 	@golangci-lint run \
 		--enable-all \
+		--disable copyloopvar \
 		--disable deadcode \
 		--disable depguard \
+		--disable execinquery \
 		--disable exhaustivestruct \
 		--disable golint \
+		--disable gomnd \
 		--disable ifshort \
 		--disable interfacer \
+		--disable intrange \
 		--disable maligned \
 		--disable nosnakecase \
 		--disable scopelint \
