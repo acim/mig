@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/jackc/pgx/v4 v4.18.3
-	github.com/jackc/pgx/v5 v5.5.5
+	github.com/jackc/pgx/v5 v5.6.0
 )
 
 require (
