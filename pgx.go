@@ -153,7 +153,7 @@ func (db *pgxDB) setLockID(ctx context.Context) error {
 	name := strings.Join([]string{database, schema, db.table}, "\x00")
 	sum := crc32.ChecksumIEEE([]byte(name))
 
-	sum *= uint32(lockID) 
+	sum *= uint32(lockID)
 
 	db.lockID = strconv.FormatUint(uint64(sum), 10)
 
