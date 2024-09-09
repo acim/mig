@@ -1,10 +1,12 @@
 module go.acim.net/mig
 
-go 1.20
+go 1.21
+
+toolchain go1.23.0
 
 require (
 	github.com/jackc/pgx/v4 v4.18.3
-	github.com/jackc/pgx/v5 v5.6.0
+	github.com/jackc/pgx/v5 v5.7.0
 )
 
 require (
