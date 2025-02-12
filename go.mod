@@ -2,7 +2,7 @@ module go.acim.net/mig
 
 go 1.21
 
-toolchain go1.23.0
+toolchain go1.24.0
 
 require (
 	github.com/jackc/pgx/v4 v4.18.3
