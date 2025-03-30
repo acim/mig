@@ -5,9 +5,8 @@ lint:
 		--enable-all \
 		--disable copyloopvar \
 		--disable depguard \
-		--disable execinquery \
-		--disable gomnd \
 		--disable intrange \
+		--disable tenv \
 		--disable varnamelen \
 		--fix
 
