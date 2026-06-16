@@ -127,7 +127,11 @@ func ExampleFromPgx() {
 		panic(err)
 	}
 
-	defer conn.Close(ctx)
+	defer func() {
+		if err := conn.Close(ctx); err != nil {
+			panic(err)
+		}
+	}()
 
 	migrator := mig.FromPgx(migrations, conn, mig.WithCustomTable("trudy"))
 
