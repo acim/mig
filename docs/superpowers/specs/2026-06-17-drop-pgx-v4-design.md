@@ -67,7 +67,10 @@ Production code should remove all pgx v4 imports and adapters:
 - Remove `pgx4conn`, `pgx4pool`, and `tx4`.
 - Update `LastVersion` error handling to check only the pgx v5 no-rows error.
 - Rename the pgx v5 adapter-facing constructors to `FromPgx` and `FromPgxPool`.
-- Keep the internal abstraction around `pgxCmds`, `scan`, `tx`, and `rowsAffected` if it remains useful for sharing single-connection and pool-connection behavior.
+- Collapse the pgx compatibility layer that existed to support both pgx v4 and pgx v5.
+- Remove private adapter interfaces such as `pgxCmds`, `scan`, `tx`, and `rowsAffected` where pgx v5 direct types make them unnecessary.
+- Keep only narrowly justified private interfaces if they are still useful for sharing single-connection and pool-connection behavior without duplicating migration logic.
+- Keep the public `Database` interface as the supported extension point for custom database integrations.
 
 Tests and examples should match the new API:
 
@@ -120,6 +123,8 @@ This repository contains Go code, so enabling GitHub CodeQL/code scanning is als
 - `go.mod` no longer requires `github.com/jackc/pgx/v4`.
 - No production, test, or README references remain for pgx v4 support.
 - The public pgx constructors are `FromPgx` and `FromPgxPool`.
+- The public `Database` interface remains available for custom integrations.
+- The private pgx compatibility interfaces are removed unless a small remaining interface is clearly justified by pgx v5 conn/pool sharing.
 - Tests and examples compile against the new names.
 - README describes pgx v5 as the only built-in driver support.
 - The implementation is suitable for a future `v0.2.0` release.
