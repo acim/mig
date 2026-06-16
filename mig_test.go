@@ -92,6 +92,8 @@ func ExampleFromPgxPool() {
 		panic(err)
 	}
 
+	defer pool.Close()
+
 	migrator, cleanup, err := mig.FromPgxPool(migrations, pool, mig.WithCustomTable("eve"),
 		mig.WithAcquireConnectionTimeout(time.Second))
 	if err != nil {
@@ -124,6 +126,8 @@ func ExampleFromPgx() {
 	if err != nil {
 		panic(err)
 	}
+
+	defer conn.Close(ctx)
 
 	migrator := mig.FromPgx(migrations, conn, mig.WithCustomTable("trudy"))
 

@@ -18,3 +18,4 @@ jobs:
     uses: ectobit/reusable-workflows/.github/workflows/go-check.yaml@main
     with:
       lint-command: make lint
+      test-command: make test

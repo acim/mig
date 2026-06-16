@@ -152,4 +152,4 @@ This repository contains Go code, so enabling GitHub CodeQL/code scanning is als
 - `.github/workflows/pipeline.yaml` starts with a blocking `actionlint` job.
 - The rest of the pipeline depends on the `actionlint` job succeeding.
 - CI fails when coverage is below 80%.
-- The implementation is suitable for a future `v0.2.0` release.
+- The implementation is suitable for the `v0.2.0` release.

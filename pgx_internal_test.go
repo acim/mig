@@ -130,5 +130,7 @@ func pgxPool(ctx context.Context, t *testing.T) *pgxpool.Pool {
 		t.Fatalf("connect config: %v", err)
 	}
 
+	t.Cleanup(pool.Close)
+
 	return pool
 }
