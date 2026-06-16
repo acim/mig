@@ -13,6 +13,10 @@ The implementation should make `github.com/jackc/pgx/v5` the only built-in pgx i
 - Prepare the change for a `v0.2.0` release, not `v2.0.0`.
 - Make pgx v5 the default naming surface with `FromPgx` and `FromPgxPool`.
 - Document the breaking change clearly for users migrating from `v0.1.x`.
+- Update the local PostgreSQL service used for integration tests from `postgres:15-alpine` to `postgres:18-alpine`.
+- Refresh Go dependencies with `make update`.
+- Add a blocking GitHub Actions `actionlint` job before the rest of the pipeline.
+- Fail CI when test coverage drops below 80%.
 
 ## Non-Goals
 
@@ -86,6 +90,19 @@ Docs should match the new supported surface:
 - Release notes for `v0.2.0` should call out the breaking change:
   `Breaking: dropped support for github.com/jackc/pgx/v4; pgx v5 is now the only built-in pgx driver support. Rename FromPgxV5 to FromPgx and FromPgxV5Pool to FromPgxPool.`
 
+Local test infrastructure should be updated:
+
+- `docker-compose.yml` should use `postgres:18-alpine` instead of `postgres:15-alpine`.
+- Dependency refresh should be performed with `make update`.
+
+CI should be updated:
+
+- Add an `actionlint` job as the first job in `.github/workflows/pipeline.yaml`.
+- Use `raven-actions/actionlint@v2` for the workflow lint gate.
+- Make the existing pipeline checks depend on `actionlint`, so the rest of the pipeline does not run if workflow linting fails.
+- Add a blocking coverage gate that fails CI when coverage is below 80%.
+- The coverage gate may be implemented in `Makefile`, in the workflow, or through the reusable workflow inputs if that workflow already supports a coverage threshold. Prefer the simplest option that makes local and CI behavior clear.
+
 ## Error Handling
 
 No runtime behavior change is expected except the removal of pgx v4 compatibility. Errors should continue to be wrapped with the current contextual messages such as `acquire connection`, `begin`, `exec`, `scan`, and `commit`.
@@ -98,13 +115,16 @@ Verification should include:
 
 - `go test ./...`
 - Existing long/integration tests when PostgreSQL is running through the current local compose setup.
+- `make update`
 - A dependency check such as `go mod tidy` followed by verifying that pgx v4 no longer appears in `go.mod`.
+- A CI configuration check confirming `actionlint` runs before the rest of the pipeline.
+- A coverage check confirming CI fails below 80%.
 
 If the local database is not running, the implementation should at least run the short test set and report that database-backed tests were not executed.
 
 ## Repository Hygiene Notes
 
-This repository has GitHub Actions workflows under `.github/workflows/`, so a follow-up should add a blocking `actionlint` CI gate. The preferred job is:
+This repository has GitHub Actions workflows under `.github/workflows/`, so this implementation should add a blocking `actionlint` CI gate. The preferred job is:
 
 ```yaml
 actionlint:
@@ -127,4 +147,9 @@ This repository contains Go code, so enabling GitHub CodeQL/code scanning is als
 - The private pgx compatibility interfaces are removed unless a small remaining interface is clearly justified by pgx v5 conn/pool sharing.
 - Tests and examples compile against the new names.
 - README describes pgx v5 as the only built-in driver support.
+- `docker-compose.yml` uses `postgres:18-alpine`.
+- `make update` has been run and resulting dependency changes are included.
+- `.github/workflows/pipeline.yaml` starts with a blocking `actionlint` job.
+- The rest of the pipeline depends on the `actionlint` job succeeding.
+- CI fails when coverage is below 80%.
 - The implementation is suitable for a future `v0.2.0` release.

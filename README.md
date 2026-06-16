@@ -10,13 +10,18 @@ Go PostgreSQL database schema migration library.
 ## Supported drivers
 
 - [pgx/v5](https://github.com/jackc/pgx) single connection and connection pool
-- [pgx/v4](https://github.com/jackc/pgx/tree/v4) single connection and connection pool
 
 In theory, you can also make an implementation for any database using _mig.Database_ interface and instantiate **mig** using _mig.New_ constructor. Since there are other migration libraries supporting multiple databases using Go's standard library's interface _database/sql_, this project has no intention to make such implementations since there is no other library specific to _pgx_ driver. As of now, there is only [tern](https://github.com/jackc/tern) CLI, but it doesn't provide a library.
 
 ## Warning :construction:
 
 This project is in an early stage so you can expect API breaking changes until the first major release.
+
+## Breaking changes in v0.2.0
+
+- Dropped built-in support for [pgx/v4](https://github.com/jackc/pgx/tree/v4).
+- Renamed `FromPgxV5` to `FromPgx`.
+- Renamed `FromPgxV5Pool` to `FromPgxPool`.
 
 ## Naming migration files
 

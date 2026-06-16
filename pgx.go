@@ -8,39 +8,26 @@ import (
 	"strconv"
 	"strings"
 
-	pgx4 "github.com/jackc/pgx/v4"
-	pgxPool4 "github.com/jackc/pgx/v4/pgxpool"
-	pgx5 "github.com/jackc/pgx/v5"
-	pgxPool5 "github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const lockID = 2854263694
 
-type (
-	pgxCmds interface {
-		Exec(ctx context.Context, sql string, arguments ...any) (rowsAffected, error)
-		QueryRow(ctx context.Context, sql string, args ...any) scan
-		Begin(ctx context.Context) (tx, error)
-	}
-
-	rowsAffected interface{ RowsAffected() int64 }
-
-	scan interface{ Scan(dest ...any) error }
-
-	tx interface {
-		Exec(ctx context.Context, sql string, arguments ...any) (rowsAffected, error)
-		Commit(ctx context.Context) error
-		Rollback(ctx context.Context) error
-	}
-)
+type pgxConn interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Begin(ctx context.Context) (pgx.Tx, error)
+}
 
 type pgxDB struct {
 	table  string
 	lockID string
-	conn   pgxCmds
+	conn   pgxConn
 }
 
-func newPgxDB(conn pgxCmds, tableName string) *pgxDB {
+func newPgxDB(conn pgxConn, tableName string) *pgxDB {
 	db := &pgxDB{ //nolint:exhaustruct
 		table: tableName,
 		conn:  conn,
@@ -79,7 +66,7 @@ func (db *pgxDB) LastVersion(ctx context.Context) (uint64, error) {
 	var version uint64
 
 	if err := db.conn.QueryRow(ctx, q).Scan(&version); err != nil {
-		if errors.Is(err, pgx4.ErrNoRows) || errors.Is(err, pgx5.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, nil
 		}
 
@@ -160,102 +147,10 @@ func (db *pgxDB) setLockID(ctx context.Context) error {
 	return nil
 }
 
-type pgx4conn struct {
-	conn *pgx4.Conn
+func newPgxConn(conn *pgx.Conn) pgxConn {
+	return conn
 }
 
-func (a *pgx4conn) Exec(ctx context.Context, sql string, args ...any) (rowsAffected, error) { //nolint:ireturn
-	return a.conn.Exec(ctx, sql, args...) //nolint:wrapcheck
-}
-
-func (a *pgx4conn) QueryRow(ctx context.Context, sql string, args ...any) scan { //nolint:ireturn
-	return a.conn.QueryRow(ctx, sql, args...)
-}
-
-func (a *pgx4conn) Begin(ctx context.Context) (tx, error) { //nolint:ireturn
-	tx, err := a.conn.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin: %w", err)
-	}
-
-	return &tx4{tx}, nil
-}
-
-type pgx5conn struct {
-	conn *pgx5.Conn
-}
-
-func (a *pgx5conn) Exec(ctx context.Context, sql string, args ...any) (rowsAffected, error) { //nolint:ireturn
-	return a.conn.Exec(ctx, sql, args...) //nolint:wrapcheck
-}
-
-func (a *pgx5conn) QueryRow(ctx context.Context, sql string, args ...any) scan { //nolint:ireturn
-	return a.conn.QueryRow(ctx, sql, args...)
-}
-
-func (a *pgx5conn) Begin(ctx context.Context) (tx, error) { //nolint:ireturn
-	tx, err := a.conn.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin: %w", err)
-	}
-
-	return &tx5{tx}, nil
-}
-
-type pgx4pool struct {
-	conn *pgxPool4.Conn
-}
-
-func (a *pgx4pool) Exec(ctx context.Context, sql string, args ...any) (rowsAffected, error) { //nolint:ireturn
-	return a.conn.Exec(ctx, sql, args...) //nolint:wrapcheck
-}
-
-func (a *pgx4pool) QueryRow(ctx context.Context, sql string, args ...any) scan { //nolint:ireturn
-	return a.conn.QueryRow(ctx, sql, args...)
-}
-
-func (a *pgx4pool) Begin(ctx context.Context) (tx, error) { //nolint:ireturn
-	tx, err := a.conn.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin: %w", err)
-	}
-
-	return &tx4{tx}, nil
-}
-
-type tx4 struct {
-	pgx4.Tx
-}
-
-func (a *tx4) Exec(ctx context.Context, sql string, args ...any) (rowsAffected, error) { //nolint:ireturn
-	return a.Tx.Exec(ctx, sql, args...) //nolint:wrapcheck
-}
-
-type pgx5pool struct {
-	conn *pgxPool5.Conn
-}
-
-func (a *pgx5pool) Exec(ctx context.Context, sql string, args ...any) (rowsAffected, error) { //nolint:ireturn
-	return a.conn.Exec(ctx, sql, args...) //nolint:wrapcheck
-}
-
-func (a *pgx5pool) QueryRow(ctx context.Context, sql string, args ...any) scan { //nolint:ireturn
-	return a.conn.QueryRow(ctx, sql, args...)
-}
-
-func (a *pgx5pool) Begin(ctx context.Context) (tx, error) { //nolint:ireturn
-	tx, err := a.conn.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin: %w", err)
-	}
-
-	return &tx5{tx}, nil
-}
-
-type tx5 struct {
-	pgx5.Tx
-}
-
-func (a *tx5) Exec(ctx context.Context, sql string, args ...any) (rowsAffected, error) { //nolint:ireturn
-	return a.Tx.Exec(ctx, sql, args...) //nolint:wrapcheck
+func newPgxPoolConn(conn *pgxpool.Conn) pgxConn {
+	return conn
 }

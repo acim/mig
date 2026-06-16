@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	pgx4 "github.com/jackc/pgx/v4"
-	pgxPoolV4 "github.com/jackc/pgx/v4/pgxpool"
-	pgx5 "github.com/jackc/pgx/v5"
-	pgxPoolV5 "github.com/jackc/pgx/v5/pgxpool"
+	pgx "github.com/jackc/pgx/v5"
+	pgxpool "github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Database interface {
@@ -42,7 +40,7 @@ func New(ms Migrations, db Database, opts ...Option) *Mig {
 	return m
 }
 
-func FromPgxV4Pool(ms Migrations, pool *pgxPoolV4.Pool, opts ...Option) (*Mig, func(), error) {
+func FromPgxPool(ms Migrations, pool *pgxpool.Pool, opts ...Option) (*Mig, func(), error) {
 	m := New(ms, nil, opts...)
 
 	ctx := context.Background()
@@ -59,53 +57,15 @@ func FromPgxV4Pool(ms Migrations, pool *pgxPoolV4.Pool, opts ...Option) (*Mig, f
 		return nil, nil, fmt.Errorf("acquire connection: %w", err)
 	}
 
-	m.db = newPgxDB(&pgx4pool{
-		conn: conn,
-	}, m.table)
+	m.db = newPgxDB(newPgxPoolConn(conn), m.table)
 
 	return m, conn.Release, nil
 }
 
-func FromPgxV5Pool(ms Migrations, pool *pgxPoolV5.Pool, opts ...Option) (*Mig, func(), error) {
+func FromPgx(ms Migrations, conn *pgx.Conn, opts ...Option) *Mig {
 	m := New(ms, nil, opts...)
 
-	ctx := context.Background()
-	cancel := func() {}
-
-	if m.timeout > 0 {
-		ctx, cancel = context.WithTimeout(ctx, m.timeout)
-	}
-
-	defer cancel()
-
-	conn, err := pool.Acquire(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("acquire connection: %w", err)
-	}
-
-	m.db = newPgxDB(&pgx5pool{
-		conn: conn,
-	}, m.table)
-
-	return m, conn.Release, nil
-}
-
-func FromPgxV4(ms Migrations, conn *pgx4.Conn, opts ...Option) *Mig {
-	m := New(ms, nil, opts...)
-
-	m.db = newPgxDB(&pgx4conn{
-		conn: conn,
-	}, m.table)
-
-	return m
-}
-
-func FromPgxV5(ms Migrations, conn *pgx5.Conn, opts ...Option) *Mig {
-	m := New(ms, nil, opts...)
-
-	m.db = newPgxDB(&pgx5conn{
-		conn: conn,
-	}, m.table)
+	m.db = newPgxDB(newPgxConn(conn), m.table)
 
 	return m
 }

@@ -7,10 +7,8 @@ import (
 	"testing"
 	"time"
 
-	pgx4 "github.com/jackc/pgx/v4"
-	pgx4pool "github.com/jackc/pgx/v4/pgxpool"
-	pgx5 "github.com/jackc/pgx/v5"
-	pgx5pool "github.com/jackc/pgx/v5/pgxpool"
+	pgx "github.com/jackc/pgx/v5"
+	pgxpool "github.com/jackc/pgx/v5/pgxpool"
 	"go.acim.net/mig"
 )
 
@@ -76,7 +74,7 @@ func (db *dbFake) Unlock(context.Context) error {
 	return nil
 }
 
-func ExampleFromPgxV4Pool() {
+func ExampleFromPgxPool() {
 	wd, err := os.Getwd()
 	if err != nil {
 		panic(err)
@@ -89,71 +87,12 @@ func ExampleFromPgxV4Pool() {
 
 	ctx := context.Background()
 
-	pool, err := pgx4pool.Connect(ctx, dsn)
+	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		panic(err)
 	}
 
-	migrator, cleanup, err := mig.FromPgxV4Pool(migrations, pool, mig.WithCustomTable("alice"))
-	if err != nil {
-		panic(err)
-	}
-
-	defer cleanup()
-
-	if err := migrator.Migrate(ctx); err != nil {
-		panic(err)
-	}
-
-	// Output:
-}
-
-func ExampleFromPgxV4() {
-	wd, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
-
-	migrations, err := mig.FromDir(filepath.Join(wd, "migrations"))
-	if err != nil {
-		panic(err)
-	}
-
-	ctx := context.Background()
-
-	conn, err := pgx4.Connect(ctx, dsn)
-	if err != nil {
-		panic(err)
-	}
-
-	migrator := mig.FromPgxV4(migrations, conn, mig.WithCustomTable("bob"))
-
-	if err := migrator.Migrate(ctx); err != nil {
-		panic(err)
-	}
-
-	// Output:
-}
-
-func ExampleFromPgxV5Pool() {
-	wd, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
-
-	migrations, err := mig.FromDir(filepath.Join(wd, "migrations"))
-	if err != nil {
-		panic(err)
-	}
-
-	ctx := context.Background()
-
-	pool, err := pgx5pool.New(ctx, dsn)
-	if err != nil {
-		panic(err)
-	}
-
-	migrator, cleanup, err := mig.FromPgxV5Pool(migrations, pool, mig.WithCustomTable("eve"),
+	migrator, cleanup, err := mig.FromPgxPool(migrations, pool, mig.WithCustomTable("eve"),
 		mig.WithAcquireConnectionTimeout(time.Second))
 	if err != nil {
 		panic(err)
@@ -168,7 +107,7 @@ func ExampleFromPgxV5Pool() {
 	// Output:
 }
 
-func ExampleFromPgxV5() {
+func ExampleFromPgx() {
 	wd, err := os.Getwd()
 	if err != nil {
 		panic(err)
@@ -181,12 +120,12 @@ func ExampleFromPgxV5() {
 
 	ctx := context.Background()
 
-	conn, err := pgx5.Connect(ctx, dsn)
+	conn, err := pgx.Connect(ctx, dsn)
 	if err != nil {
 		panic(err)
 	}
 
-	migrator := mig.FromPgxV5(migrations, conn, mig.WithCustomTable("trudy"))
+	migrator := mig.FromPgx(migrations, conn, mig.WithCustomTable("trudy"))
 
 	if err := migrator.Migrate(ctx); err != nil {
 		panic(err)
