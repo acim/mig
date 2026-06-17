@@ -192,6 +192,38 @@ func TestRunMigrationPreservesPgError(t *testing.T) {
 	}
 }
 
+func TestRunMigrationWrapsBeginError(t *testing.T) {
+	t.Parallel()
+
+	beginErr := errors.New("begin failed")
+	db := newPgxDB(connFake{beginErr: beginErr}, "")
+
+	err := db.RunMigration(context.Background(), "SELECT 1")
+	if !errors.Is(err, beginErr) {
+		t.Fatalf("RunMigration() error=%v; want begin error", err)
+	}
+
+	if !strings.Contains(err.Error(), "begin migration transaction: begin failed") {
+		t.Fatalf("RunMigration() error=%q; want begin transaction context", err)
+	}
+}
+
+func TestRunMigrationWrapsCommitError(t *testing.T) {
+	t.Parallel()
+
+	commitErr := errors.New("commit failed")
+	db := newPgxDB(connFake{tx: &txFake{commitErr: commitErr}}, "")
+
+	err := db.RunMigration(context.Background(), "SELECT 1")
+	if !errors.Is(err, commitErr) {
+		t.Fatalf("RunMigration() error=%v; want commit error", err)
+	}
+
+	if !strings.Contains(err.Error(), "commit migration transaction: commit failed") {
+		t.Fatalf("RunMigration() error=%q; want commit transaction context", err)
+	}
+}
+
 type txFake struct {
 	execErr     error
 	rollbackErr error

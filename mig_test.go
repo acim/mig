@@ -138,6 +138,82 @@ func TestMigrateJoinsMigrationAndUnlockErrors(t *testing.T) {
 	}
 }
 
+func TestMigrateWrapsSetupErrors(t *testing.T) {
+	t.Parallel()
+
+	lockErr := errors.New("lock failed")
+	createErr := errors.New("create failed")
+	lastVersionErr := errors.New("last version failed")
+
+	tests := []struct {
+		name string
+		db   *dbFake
+		want string
+		err  error
+	}{
+		{
+			name: "lock",
+			db:   &dbFake{lockErr: lockErr}, //nolint:exhaustruct
+			want: "lock: lock failed",
+			err:  lockErr,
+		},
+		{
+			name: "create schema migrations table",
+			db:   &dbFake{createTableErr: createErr}, //nolint:exhaustruct
+			want: "create schema migrations table: create failed",
+			err:  createErr,
+		},
+		{
+			name: "last version",
+			db:   &dbFake{lastVersionErr: lastVersionErr}, //nolint:exhaustruct
+			want: "last version: last version failed",
+			err:  lastVersionErr,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			m := mig.New(mig.Migrations{}, tt.db)
+
+			err := m.Migrate(context.Background())
+			if err == nil {
+				t.Fatal("Migrate() error=<nil>; want error")
+			}
+
+			if !errors.Is(err, tt.err) {
+				t.Fatalf("Migrate() error=%v; want wrapped error", err)
+			}
+
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Migrate() error=%q; want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestMigrateWrapsSetLastVersionError(t *testing.T) {
+	t.Parallel()
+
+	setErr := errors.New("set failed")
+	db := &dbFake{setVersionErr: setErr} //nolint:exhaustruct
+	m := mig.New(mig.Migrations{{
+		Version: 3,
+		Path:    "003-ok.sql",
+		SQL:     "SELECT 1",
+	}}, db)
+
+	err := m.Migrate(context.Background())
+	if !errors.Is(err, setErr) {
+		t.Fatalf("Migrate() error=%v; want set error", err)
+	}
+
+	if !strings.Contains(err.Error(), "set last version 3: set failed") {
+		t.Fatalf("Migrate() error=%q; want set last version context", err)
+	}
+}
+
 func ExampleFromPgxPool() {
 	wd, err := os.Getwd()
 	if err != nil {

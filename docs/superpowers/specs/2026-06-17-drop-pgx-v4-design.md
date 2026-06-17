@@ -16,7 +16,7 @@ The implementation should make `github.com/jackc/pgx/v5` the only built-in pgx i
 - Update the local PostgreSQL service used for integration tests from `postgres:15-alpine` to `postgres:18-alpine`.
 - Refresh Go dependencies with `make update`.
 - Add a blocking GitHub Actions `actionlint` job before the rest of the pipeline.
-- Fail CI when test coverage drops below 80%.
+- Fail CI when test coverage drops below 90%.
 
 ## Non-Goals
 
@@ -100,7 +100,7 @@ CI should be updated:
 - Add an `actionlint` job as the first job in `.github/workflows/pipeline.yaml`.
 - Use `raven-actions/actionlint@v2` for the workflow lint gate.
 - Make the existing pipeline checks depend on `actionlint`, so the rest of the pipeline does not run if workflow linting fails.
-- Add a blocking coverage gate that fails CI when coverage is below 80%.
+- Add a blocking coverage gate that fails CI when coverage is below 90%.
 - The coverage gate may be implemented in `Makefile`, in the workflow, or through the reusable workflow inputs if that workflow already supports a coverage threshold. Prefer the simplest option that makes local and CI behavior clear.
 
 ## Error Handling
@@ -118,7 +118,7 @@ Verification should include:
 - `make update`
 - A dependency check such as `go mod tidy` followed by verifying that pgx v4 no longer appears in `go.mod`.
 - A CI configuration check confirming `actionlint` runs before the rest of the pipeline.
-- A coverage check confirming CI fails below 80%.
+- A coverage check confirming CI fails below 90%.
 
 If the local database is not running, the implementation should at least run the short test set and report that database-backed tests were not executed.
 
@@ -151,5 +151,5 @@ This repository contains Go code, and GitHub CodeQL/code scanning is enabled for
 - `make update` has been run and resulting dependency changes are included.
 - `.github/workflows/pipeline.yaml` starts with a blocking `actionlint` job.
 - The rest of the pipeline depends on the `actionlint` job succeeding.
-- CI fails when coverage is below 80%.
+- CI fails when coverage is below 90%.
 - The implementation is suitable for the `v0.2.0` release.

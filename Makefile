@@ -14,7 +14,7 @@ test:
 	@report=$$(go tool cover -func coverage.out); \
 	echo "$$report"; \
 	coverage=$$(printf "%s\n" "$$report" | awk '/^total:/ {gsub(/%/, "", $$3); print $$3}'); \
-	threshold=$${COVERAGE_THRESHOLD:-80}; \
+	threshold=$${COVERAGE_THRESHOLD:-90}; \
 	if [ -z "$$coverage" ]; then echo "coverage total not found" && exit 1; fi; \
 	awk "BEGIN { exit !($$coverage >= $$threshold) }" || \
 		(echo "coverage $$coverage% is below $$threshold%" && exit 1)

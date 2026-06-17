@@ -427,7 +427,7 @@ Run:
 make test
 ```
 
-Expected: pass with coverage at or above 80%.
+Expected: pass with coverage at or above 90%.
 
 - [ ] **Step 3: Stop local PostgreSQL if started for this work**
 

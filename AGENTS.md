@@ -6,6 +6,7 @@
 - Write a failing test first that captures the intended behavior or regression.
 - Implement the smallest scoped change needed to make that test pass.
 - Run the relevant tests and confirm the new test is green before considering the change complete.
+- Whenever Go code or tests change, run the real coverage command and update the README coverage badge number to match. Keep the existing badge format, including the escaped percent as `%25`.
 
 ## Sandbox Notes
 
