@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Improve migration failure diagnostics while preserving the existing public API and wrapped error behavior.
+**Goal:** Improve migration failure diagnostics while preserving the existing public API and wrapped error behavior, including caller access to pgx `*pgconn.PgError` through `errors.As`.
 
-**Architecture:** Keep errors as ordinary wrapped Go errors. Add deterministic unit coverage around `Mig.Migrate` using a fake `Database`, and around `pgxDB.RunMigration` using small internal fakes for `pgxConn` and `pgx.Tx`. Make the smallest production changes needed: named return error in `Migrate`, clearer pgx transaction labels, and `errors.Join` when cleanup fails alongside a primary error.
+**Architecture:** Keep errors as ordinary wrapped Go errors. Add deterministic unit coverage around `Mig.Migrate` using a fake `Database`, and around `pgxDB.RunMigration` using small internal fakes for `pgxConn` and `pgx.Tx`. Make the smallest production changes needed: named return error in `Migrate`, clearer pgx transaction labels, and `errors.Join` when cleanup fails alongside a primary error. Do not include migration SQL text in default error messages; callers that need structured PostgreSQL diagnostics should use `errors.As` with `*pgconn.PgError`.
 
 **Tech Stack:** Go standard library, existing pgx v5 dependency, existing `go test` and `make test` targets.
 
@@ -16,6 +16,7 @@
 - Modify `mig.go`: make `Migrate` use a named return error and wrap unlock failures as `unlock: %w`.
 - Modify `pgx_internal_test.go`: add internal fake transaction tests for `pgxDB.RunMigration` error wrapping.
 - Modify `pgx.go`: replace generic migration transaction wrappers with operation-specific messages and preserve both exec and rollback errors.
+- Optionally modify `README.md`: document how callers can extract `*pgconn.PgError` from returned errors with `errors.As`, if public documentation is desired.
 
 ## Task 1: `Mig.Migrate` Unlock And Migration Context
 
@@ -316,12 +317,55 @@ func TestRunMigrationJoinsExecAndRollbackErrors(t *testing.T) {
 }
 ```
 
+- [ ] **Step 1b: Add PostgreSQL error extraction test or documentation**
+
+If adding a code-level regression test, add a test that wraps a `*pgconn.PgError` through `RunMigration` and proves it is still extractable:
+
+```go
+func TestRunMigrationPreservesPgError(t *testing.T) {
+	t.Parallel()
+
+	pgErr := &pgconn.PgError{
+		Message:  "syntax error at or near \"TABLE\"",
+		Severity: "ERROR",
+		Code:     "42601",
+	}
+	db := newPgxDB(connFake{tx: &txFake{execErr: pgErr}}, "")
+
+	err := db.RunMigration(context.Background(), "broken")
+
+	var got *pgconn.PgError
+	if !errors.As(err, &got) {
+		t.Fatalf("RunMigration() error=%v; want pg error", err)
+	}
+
+	if got.SQLState() != "42601" {
+		t.Fatalf("PgError.SQLState()=%q; want %q", got.SQLState(), "42601")
+	}
+}
+```
+
+If documenting instead, add a short README example:
+
+```go
+var pgErr *pgconn.PgError
+if errors.As(err, &pgErr) {
+	fmt.Println(pgErr.Message)
+	fmt.Println(pgErr.Detail)
+	fmt.Println(pgErr.Hint)
+	fmt.Println(pgErr.Position)
+	fmt.Println(pgErr.SQLState())
+}
+```
+
+Do not add migration SQL text to default error strings.
+
 - [ ] **Step 2: Run tests to verify RED**
 
 Run:
 
 ```bash
-go test ./... -run 'TestRunMigration(WrapsExecError|JoinsExecAndRollbackErrors)'
+go test ./... -run 'TestRunMigration(WrapsExecError|JoinsExecAndRollbackErrors|PreservesPgError)'
 ```
 
 Expected: fail because the current message is `exec`, and rollback failure hides the exec failure.
@@ -355,7 +399,7 @@ if err := tx.Commit(ctx); err != nil {
 Run:
 
 ```bash
-go test ./... -run 'TestRunMigration(WrapsExecError|JoinsExecAndRollbackErrors)'
+go test ./... -run 'TestRunMigration(WrapsExecError|JoinsExecAndRollbackErrors|PreservesPgError)'
 ```
 
 Expected: pass.

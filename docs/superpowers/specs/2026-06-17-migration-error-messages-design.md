@@ -13,6 +13,7 @@ The package should continue returning ordinary wrapped Go errors. Callers should
 - Preserve both the migration SQL execution failure and rollback failure when both happen.
 - Keep migration failure messages anchored to the migration version and file path.
 - Replace generic pgx migration execution labels such as `exec` with clearer operation-specific context.
+- Preserve pgx `*pgconn.PgError` values so callers can inspect PostgreSQL fields such as message, detail, hint, position, and SQLSTATE with `errors.As`.
 - Add tests that lock in the improved failure behavior and representative messages.
 
 ## Non-Goals
@@ -22,6 +23,7 @@ The package should continue returning ordinary wrapped Go errors. Callers should
 - Do not change the public `Database` interface.
 - Do not change migration ordering, storage schema, advisory lock behavior, or pgx connection handling.
 - Do not include SQL text in returned errors.
+- Do not add a debug or verbose mode for SQL snippets in this pass.
 - Do not add third-party dependencies.
 
 ## Current Behavior
@@ -80,6 +82,21 @@ rollback migration transaction: ...
 
 Rollback failure must not hide the original SQL execution failure.
 
+Callers that need structured PostgreSQL diagnostics should be able to extract the wrapped pgx error:
+
+```go
+var pgErr *pgconn.PgError
+if errors.As(err, &pgErr) {
+    fmt.Println(pgErr.Message)
+    fmt.Println(pgErr.Detail)
+    fmt.Println(pgErr.Hint)
+    fmt.Println(pgErr.Position)
+    fmt.Println(pgErr.SQLState())
+}
+```
+
+This design intentionally keeps SQL text out of the default error message. The library should expose the real PostgreSQL error through wrapping, but callers should decide if and where to log SQL text or snippets because migration SQL may contain sensitive seed data.
+
 ## Error Message Vocabulary
 
 The pgx migration execution path should use operation-specific labels:
@@ -110,6 +127,7 @@ Unit tests around `Mig.Migrate` should use a fake `Database` implementation so t
 - migration failure with unlock failure returns both errors
 - migration failure includes migration version and path context
 - wrapped underlying errors remain discoverable with `errors.Is`
+- wrapped pgx `*pgconn.PgError` values remain discoverable with `errors.As`
 
 Tests around `pgxDB.RunMigration` should verify:
 
@@ -130,6 +148,8 @@ Integration tests may still exercise real PostgreSQL behavior for representative
 - pgx migration execution errors use operation-specific labels instead of plain `exec`.
 - Existing public API remains unchanged.
 - Existing underlying errors remain available through normal Go error wrapping.
+- Real PostgreSQL/pgx errors remain available to callers through `errors.As`, including `*pgconn.PgError`.
+- Default returned error strings do not include migration SQL text.
 - `go test ./...` passes.
 - `make test` passes when PostgreSQL is running.
 - `git diff --check` passes.

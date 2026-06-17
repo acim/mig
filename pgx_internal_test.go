@@ -165,6 +165,33 @@ func TestRunMigrationJoinsExecAndRollbackErrors(t *testing.T) {
 	}
 }
 
+func TestRunMigrationPreservesPgError(t *testing.T) {
+	t.Parallel()
+
+	const query = "CREATE TABLE"
+	pgErr := &pgconn.PgError{
+		Message:  "syntax error at or near \"TABLE\"",
+		Severity: "ERROR",
+		Code:     "42601",
+	}
+	db := newPgxDB(connFake{tx: &txFake{execErr: pgErr}}, "")
+
+	err := db.RunMigration(context.Background(), query)
+
+	var got *pgconn.PgError
+	if !errors.As(err, &got) {
+		t.Fatalf("RunMigration() error=%v; want pg error", err)
+	}
+
+	if got.SQLState() != "42601" {
+		t.Fatalf("PgError.SQLState()=%q; want %q", got.SQLState(), "42601")
+	}
+
+	if strings.Contains(err.Error(), query) {
+		t.Fatalf("RunMigration() error=%q; should not include SQL query text", err)
+	}
+}
+
 type txFake struct {
 	execErr     error
 	rollbackErr error
