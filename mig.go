@@ -70,14 +70,16 @@ func FromPgx(ms Migrations, conn *pgx.Conn, opts ...Option) *Mig {
 	return m
 }
 
-func (d *Mig) Migrate(ctx context.Context) error {
-	err := d.db.Lock(ctx)
+func (d *Mig) Migrate(ctx context.Context) (err error) {
+	err = d.db.Lock(ctx)
 	if err != nil {
 		return fmt.Errorf("lock: %w", err)
 	}
 
 	defer func() {
-		err = errors.Join(err, d.db.Unlock(ctx))
+		if unlockErr := d.db.Unlock(ctx); unlockErr != nil {
+			err = errors.Join(err, fmt.Errorf("unlock: %w", unlockErr))
+		}
 	}()
 
 	if err := d.db.CreateSchemaMigrationsTable(ctx); err != nil {

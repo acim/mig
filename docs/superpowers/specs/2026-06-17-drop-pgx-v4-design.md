@@ -135,7 +135,7 @@ actionlint:
     - uses: raven-actions/actionlint@v2
 ```
 
-This repository contains Go code, so enabling GitHub CodeQL/code scanning is also recommended as a follow-up. There is no Dockerfile in the repository, so the container image vulnerability scanning reminder does not apply to the current tree.
+This repository contains Go code, and GitHub CodeQL/code scanning is enabled for it. There is no Dockerfile in the repository, so the container image vulnerability scanning reminder does not apply to the current tree.
 
 ## Acceptance Criteria
 

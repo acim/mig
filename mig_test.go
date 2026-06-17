@@ -2,8 +2,10 @@ package mig_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,36 +44,98 @@ func TestMigrate(t *testing.T) {
 type dbFake struct {
 	l bool
 	v uint64
+
+	lockErr         error
+	createTableErr  error
+	lastVersionErr  error
+	runMigrationErr error
+	setVersionErr   error
+	unlockErr       error
 }
 
 func (db *dbFake) Lock(context.Context) error {
 	db.l = true
 
-	return nil
+	return db.lockErr
 }
 
 func (db *dbFake) CreateSchemaMigrationsTable(context.Context) error {
-	return nil
+	return db.createTableErr
 }
 
 func (db *dbFake) LastVersion(context.Context) (uint64, error) {
-	return db.v, nil
+	return db.v, db.lastVersionErr
 }
 
 func (db *dbFake) SetLastVersion(_ context.Context, lastVersion uint64) error {
+	if db.setVersionErr != nil {
+		return db.setVersionErr
+	}
+
 	db.v = lastVersion
 
 	return nil
 }
 
 func (db *dbFake) RunMigration(context.Context, string) error {
-	return nil
+	return db.runMigrationErr
 }
 
 func (db *dbFake) Unlock(context.Context) error {
 	db.l = false
 
-	return nil
+	return db.unlockErr
+}
+
+func TestMigrateReturnsUnlockError(t *testing.T) {
+	t.Parallel()
+
+	unlockErr := errors.New("unlock failed")
+	db := &dbFake{unlockErr: unlockErr} //nolint:exhaustruct
+	m := mig.New(mig.Migrations{}, db)
+
+	err := m.Migrate(context.Background())
+	if !errors.Is(err, unlockErr) {
+		t.Fatalf("Migrate() error=%v; want unlock error", err)
+	}
+
+	if !strings.Contains(err.Error(), "unlock: unlock failed") {
+		t.Fatalf("Migrate() error=%q; want unlock context", err)
+	}
+}
+
+func TestMigrateJoinsMigrationAndUnlockErrors(t *testing.T) {
+	t.Parallel()
+
+	runErr := errors.New("migration failed")
+	unlockErr := errors.New("unlock failed")
+	db := &dbFake{
+		runMigrationErr: runErr,
+		unlockErr:       unlockErr,
+	} //nolint:exhaustruct
+	m := mig.New(mig.Migrations{{
+		Version: 7,
+		Path:    "007-broken.sql",
+		SQL:     "broken",
+	}}, db)
+
+	err := m.Migrate(context.Background())
+	if !errors.Is(err, runErr) {
+		t.Fatalf("Migrate() error=%v; want migration error", err)
+	}
+
+	if !errors.Is(err, unlockErr) {
+		t.Fatalf("Migrate() error=%v; want unlock error", err)
+	}
+
+	for _, want := range []string{
+		"run migration 7 from file 007-broken.sql: migration failed",
+		"unlock: unlock failed",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("Migrate() error=%q; want %q", err, want)
+		}
+	}
 }
 
 func ExampleFromPgxPool() {

@@ -100,19 +100,20 @@ func (db *pgxDB) SetLastVersion(ctx context.Context, lastVersion uint64) error {
 func (db *pgxDB) RunMigration(ctx context.Context, query string) error {
 	tx, err := db.conn.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("begin: %w", err)
+		return fmt.Errorf("begin migration transaction: %w", err)
 	}
 
 	if _, err := tx.Exec(ctx, query); err != nil {
-		if err := tx.Rollback(ctx); err != nil {
-			return fmt.Errorf("rollback: %w", err)
+		err = fmt.Errorf("execute migration SQL: %w", err)
+		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
+			return errors.Join(err, fmt.Errorf("rollback migration transaction: %w", rollbackErr))
 		}
 
-		return fmt.Errorf("exec: %w", err)
+		return err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit: %w", err)
+		return fmt.Errorf("commit migration transaction: %w", err)
 	}
 
 	return nil
