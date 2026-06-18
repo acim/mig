@@ -104,12 +104,13 @@
   - Verification: `go test -run 'TestFromDir|TestFromEmbedFS' -count=1 ./...`
   - Fixed: loader tests now assert migration slice length and compare full migration values, including SQL content. Verified with focused loader tests, fresh race/coverage, and `make test`; coverage remained `94.4%`.
 
-- [ ] **Make short tests hermetic or clearly separate examples/integration tests**
+- [x] **Make short tests hermetic or clearly separate examples/integration tests**
   - Files: `mig_test.go`, `README.md`, `Makefile`
   - Finding: `go test -short ./...` still runs examples that connect to local PostgreSQL, so the short suite fails when the expected local database is unavailable.
   - References: `mig_test.go:217`, `mig_test.go:252`
   - Fix direction: Move database-backed examples behind a testable integration setup, remove `// Output:` from examples that require PostgreSQL, or document/run a separate unit-only command.
   - Verification: `go test -short ./...`
+  - Fixed: removed `// Output:` markers from the PostgreSQL-backed examples so they compile as examples but do not execute during short/unit tests. Verified with `go test -short -run '^Example' -count=1 ./...`, `go test -short -count=1 ./...`, fresh race/coverage, and `make test`; coverage badge updated to `90.3%`.
 
 - [ ] **Document Podman-based local workflow**
   - Files: `README.md`, `Makefile`

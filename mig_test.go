@@ -321,8 +321,6 @@ func ExampleFromPgxPool() {
 	if err := migrator.Migrate(ctx); err != nil {
 		panic(err)
 	}
-
-	// Output:
 }
 
 func ExampleFromPgx() {
@@ -354,6 +352,4 @@ func ExampleFromPgx() {
 	if err := migrator.Migrate(ctx); err != nil {
 		panic(err)
 	}
-
-	// Output:
 }
