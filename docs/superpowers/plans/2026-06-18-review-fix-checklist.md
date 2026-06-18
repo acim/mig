@@ -46,12 +46,13 @@
   - Verification: `go test -run 'TestFrom.*Version' -count=1 ./...`
   - Fixed: loader parsing now checks `strconv.ParseUint` errors and returns `ErrInvalidVersion` for overflowing prefixes. Verified with `TestFromDirReturnsInvalidVersionErrorForOverflowingVersion`.
 
-- [ ] **Make custom table names safe SQL identifiers**
+- [x] **Make custom table names safe SQL identifiers**
   - Files: `mig.go`, `pgx.go`, `pgx_internal_test.go`, `README.md`
   - Finding: `WithCustomTable` accepts arbitrary strings that are interpolated into `CREATE TABLE`, `SELECT`, `UPDATE`, and `INSERT` statements.
   - References: `mig.go:111`, `pgx.go:54`, `pgx.go:64`, `pgx.go:80`, `pgx.go:91`
   - Fix direction: Validate a strict identifier/schema-qualified identifier format or use `pgx.Identifier.Sanitize()`. Document the accepted table-name format.
   - Verification: Add tests for valid identifiers, invalid injection-like names, and schema-qualified names if supported.
+  - Fixed: `WithCustomTable` now rejects invalid names with `ErrInvalidTableName`, `FromPgxPool` returns that error before acquiring a connection, `Mig.Migrate` returns it before database execution, and pgx renders accepted names with `pgx.Identifier.Sanitize()`. Documented the accepted identifier format in README. Verified with focused invalid-name tests, schema-qualified real PostgreSQL migration test, and fresh race/coverage test.
 
 - [ ] **Enforce or remove the single-row `schema_migrations` assumption**
   - Files: `pgx.go`, `pgx_internal_test.go`

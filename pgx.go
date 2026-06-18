@@ -33,11 +33,15 @@ type pgxDB struct {
 
 func newPgxDB(conn pgxConn, tableName string) *pgxDB {
 	db := &pgxDB{ //nolint:exhaustruct
-		table: tableName,
+		table: sanitizeTableName(tableName),
 		conn:  conn,
 	}
 
 	return db
+}
+
+func sanitizeTableName(tableName string) string {
+	return pgx.Identifier(strings.Split(tableName, ".")).Sanitize()
 }
 
 func (db *pgxDB) createSchemaMigrationsTable(ctx context.Context, exec pgxExecutor) error {

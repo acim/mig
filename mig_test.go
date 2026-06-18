@@ -51,8 +51,9 @@ func TestMigrate(t *testing.T) {
 }
 
 type dbFake struct {
-	l bool
-	v uint64
+	l             bool
+	v             uint64
+	migrateCalled bool
 
 	lockErr         error
 	createTableErr  error
@@ -63,6 +64,8 @@ type dbFake struct {
 }
 
 func (db *dbFake) Migrate(ctx context.Context, ms mig.Migrations) (err error) {
+	db.migrateCalled = true
+
 	err = db.Lock(ctx)
 	if err != nil {
 		return fmt.Errorf("lock: %w", err)
@@ -96,6 +99,34 @@ func (db *dbFake) Migrate(ctx context.Context, ms mig.Migrations) (err error) {
 	}
 
 	return nil
+}
+
+func TestMigrateReturnsInvalidTableNameError(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{
+		"",
+		"bad name",
+		"schema_migrations; DROP TABLE users",
+		"one.two.three",
+		"1schema_migrations",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			db := &dbFake{} //nolint:exhaustruct
+			m := mig.New(mig.Migrations{}, db, mig.WithCustomTable(name))
+
+			err := m.Migrate(context.Background())
+			if !errors.Is(err, mig.ErrInvalidTableName) {
+				t.Fatalf("Migrate() error=%v; want invalid table name error", err)
+			}
+
+			if db.migrateCalled {
+				t.Fatal("database Migrate called for invalid table name")
+			}
+		})
+	}
 }
 
 func (db *dbFake) Lock(context.Context) error {

@@ -185,7 +185,7 @@ func TestPgxMigrateWrapsCreateTableError(t *testing.T) {
 	}
 	defer conn.Release()
 
-	migrator := New(nil, newPgxDB(newPgxPoolConn(conn), "broken table name"))
+	migrator := New(nil, newPgxDB(newPgxPoolConn(conn), "missing_schema.schema_migrations"))
 
 	err = migrator.Migrate(ctx)
 	if err == nil {
@@ -260,6 +260,23 @@ func TestPgxMigrateWrapsSetLockIDError(t *testing.T) {
 	}
 }
 
+func TestFromPgxPoolReturnsInvalidTableNameError(t *testing.T) {
+	t.Parallel()
+
+	migrator, cleanup, err := FromPgxPool(nil, nil, WithCustomTable("bad name"))
+	if !errors.Is(err, ErrInvalidTableName) {
+		t.Fatalf("FromPgxPool() error=%v; want invalid table name error", err)
+	}
+
+	if migrator != nil {
+		t.Fatalf("FromPgxPool() migrator=%v; want nil", migrator)
+	}
+
+	if cleanup != nil {
+		t.Fatal("FromPgxPool() cleanup is not nil")
+	}
+}
+
 func TestPgxMigrateRejectsZeroVersionMigration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping long test")
@@ -295,6 +312,57 @@ func TestPgxMigrateRejectsZeroVersionMigration(t *testing.T) {
 
 	if tableExists(ctx, t, pool, sideEffectTable) {
 		t.Fatalf("side effect table %s exists; want zero-version migration rejected before execution", sideEffectTable)
+	}
+}
+
+func TestPgxMigrateWithSchemaQualifiedCustomTable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping long test")
+	}
+
+	ctx := context.Background()
+	schemaName := testTableName(t, "custom_schema")
+	tableName := testTableName(t, "custom_table")
+	sideEffectTable := testTableName(t, "custom_side_effect")
+	pool := pgxPool(ctx, t)
+	dropTable(ctx, t, pool, sideEffectTable)
+	if _, err := pool.Exec(ctx, "DROP SCHEMA IF EXISTS "+schemaName+" CASCADE"); err != nil {
+		t.Fatalf("drop schema before test: %v", err)
+	}
+	if _, err := pool.Exec(ctx, "CREATE SCHEMA "+schemaName); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	t.Cleanup(func() {
+		dropTable(ctx, t, pool, sideEffectTable)
+		if _, err := pool.Exec(ctx, "DROP SCHEMA IF EXISTS "+schemaName+" CASCADE"); err != nil {
+			t.Errorf("drop schema after test: %v", err)
+		}
+	})
+
+	migrator, cleanup, err := FromPgxPool(Migrations{{
+		Version: 1,
+		Path:    "001-custom-table.sql",
+		SQL:     "CREATE TABLE " + sideEffectTable + " (id integer)",
+	}}, pool, WithCustomTable(schemaName+"."+tableName))
+	if err != nil {
+		t.Fatalf("FromPgxPool(): %v", err)
+	}
+	defer cleanup()
+
+	if err := migrator.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate(): %v", err)
+	}
+
+	if !tableExists(ctx, t, pool, sideEffectTable) {
+		t.Fatalf("side effect table %s does not exist; want migration to run", sideEffectTable)
+	}
+
+	var version uint64
+	if err := pool.QueryRow(ctx, "SELECT version FROM "+schemaName+"."+tableName).Scan(&version); err != nil {
+		t.Fatalf("read custom schema migration version: %v", err)
+	}
+	if version != 1 {
+		t.Fatalf("custom schema migration version=%d; want 1", version)
 	}
 }
 

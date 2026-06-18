@@ -3,7 +3,7 @@
 [![pipeline](https://github.com/acim/mig/actions/workflows/pipeline.yaml/badge.svg)](https://github.com/acim/mig/actions/workflows/pipeline.yaml)
 [![Go Reference](https://pkg.go.dev/badge/go.acim.net/mig.svg)](https://pkg.go.dev/go.acim.net/mig)
 [![Go Report](https://goreportcard.com/badge/go.acim.net/mig)](https://goreportcard.com/report/go.acim.net/mig)
-![Go Coverage](https://img.shields.io/badge/coverage-92.0%25-brightgreen?style=flat&logo=go)
+![Go Coverage](https://img.shields.io/badge/coverage-93.4%25-brightgreen?style=flat&logo=go)
 
 Go PostgreSQL database schema migration library.
 
@@ -12,6 +12,8 @@ Go PostgreSQL database schema migration library.
 - [pgx/v5](https://github.com/jackc/pgx) single connection and connection pool
 
 In theory, you can also make an implementation for any database using _mig.Database_ interface and instantiate **mig** using _mig.New_ constructor. Since there are other migration libraries supporting multiple databases using Go's standard library's interface _database/sql_, this project has no intention to make such implementations since there is no other library specific to _pgx_ driver. As of now, there is only [tern](https://github.com/jackc/tern) CLI, but it doesn't provide a library.
+
+Custom migration table names must be simple PostgreSQL identifiers such as `schema_migrations` or schema-qualified identifiers such as `app.schema_migrations`. Each identifier part must start with a letter or underscore and contain only letters, digits, and underscores.
 
 ## Warning :construction:
 
