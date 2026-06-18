@@ -2,7 +2,6 @@ package mig
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -11,12 +10,7 @@ import (
 )
 
 type Database interface {
-	Lock(ctx context.Context) error
-	CreateSchemaMigrationsTable(ctx context.Context) error
-	LastVersion(ctx context.Context) (uint64, error)
-	SetLastVersion(ctx context.Context, lastVersion uint64) error
-	RunMigration(ctx context.Context, query string) error
-	Unlock(ctx context.Context) error
+	Migrate(ctx context.Context, ms Migrations) error
 }
 
 type Mig struct {
@@ -70,40 +64,8 @@ func FromPgx(ms Migrations, conn *pgx.Conn, opts ...Option) *Mig {
 	return m
 }
 
-func (d *Mig) Migrate(ctx context.Context) (err error) {
-	err = d.db.Lock(ctx)
-	if err != nil {
-		return fmt.Errorf("lock: %w", err)
-	}
-
-	defer func() {
-		if unlockErr := d.db.Unlock(ctx); unlockErr != nil {
-			err = errors.Join(err, fmt.Errorf("unlock: %w", unlockErr))
-		}
-	}()
-
-	if err := d.db.CreateSchemaMigrationsTable(ctx); err != nil {
-		return fmt.Errorf("create schema migrations table: %w", err)
-	}
-
-	lastVersion, err := d.db.LastVersion(ctx)
-	if err != nil {
-		return fmt.Errorf("last version: %w", err)
-	}
-
-	for _, m := range d.ms {
-		if m.Version > lastVersion {
-			if err := d.db.RunMigration(ctx, m.SQL); err != nil {
-				return fmt.Errorf("run migration %d from file %s: %w", m.Version, m.Path, err)
-			}
-
-			if err := d.db.SetLastVersion(ctx, m.Version); err != nil {
-				return fmt.Errorf("set last version %d: %w", m.Version, err)
-			}
-		}
-	}
-
-	return nil
+func (d *Mig) Migrate(ctx context.Context) error {
+	return d.db.Migrate(ctx, d.ms)
 }
 
 type Option func(*Mig)

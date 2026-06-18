@@ -3,8 +3,11 @@ package mig
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -19,292 +22,248 @@ var (
 	_ Database = (*pgxDB)(nil)
 )
 
-func TestPgxPool(t *testing.T) { //nolint:cyclop
-	t.Parallel()
-
-	if testing.Short() {
-		t.Skip("skipping long test")
-	}
-
-	const tableName = "foo"
-
-	ctx := context.Background()
-
-	pool := pgxPool(ctx, t)
-
-	q := "DROP TABLE IF EXISTS " + tableName
-
-	if _, err := pool.Exec(ctx, q); err != nil {
-		t.Fatalf("drop table before test: %v", err)
-	}
-
-	defer func() {
-		if _, err := pool.Exec(ctx, q); err != nil {
-			t.Errorf("drop table after test: %v", err)
-		}
-	}()
-
-	conn, err := pool.Acquire(ctx)
-	if err != nil {
-		t.Fatalf("acquire connection: %v", err)
-	}
-
-	defer conn.Release()
-
-	db := newPgxDB(newPgxPoolConn(conn), tableName)
-
-	if err := db.Lock(ctx); err != nil {
-		t.Errorf("Lock(): %v", err)
-	}
-
-	if err := db.CreateSchemaMigrationsTable(ctx); err != nil {
-		t.Errorf("CreateSchemaMigrationsTable(): %v", err)
-	}
-
-	var v uint64
-
-	v, err = db.LastVersion(ctx)
-	if err != nil {
-		t.Errorf("LastVersion(): %v", err)
-	}
-
-	if v != 0 {
-		t.Errorf("LastVersion()=%d; want %d", v, 0)
-	}
-
-	if err := db.SetLastVersion(ctx, 1); err != nil {
-		t.Errorf("SetLastVersion(): %v", err)
-	}
-
-	q = "SELECT version FROM " + tableName
-
-	if err := pool.QueryRow(ctx, q).Scan(&v); err != nil {
-		t.Errorf("Scan(): %v", err)
-	}
-
-	if v != 1 {
-		t.Errorf("SetLastVersion()=%d; want %d", v, 1)
-	}
-
-	if err := db.Unlock(ctx); err != nil {
-		t.Errorf("Unlock(): %v", err)
-	}
-}
-
-func TestPoolRunMigration(t *testing.T) {
-	t.Parallel()
-
+func TestPgxMigrateRollsBackMigrationWhenVersionRecordingFails(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping long test")
 	}
 
 	ctx := context.Background()
-
+	tableName := testTableName(t, "atomic_versions")
+	sideEffectTable := testTableName(t, "atomic_side_effects")
 	pool := pgxPool(ctx, t)
+	dropTable(ctx, t, pool, tableName)
+	dropTable(ctx, t, pool, sideEffectTable)
+	if _, err := pool.Exec(ctx, "CREATE TABLE "+tableName+" (version bigint PRIMARY KEY)"); err != nil {
+		t.Fatalf("create migration table %s: %v", tableName, err)
+	}
+	t.Cleanup(func() {
+		dropTable(ctx, t, pool, tableName)
+		dropTable(ctx, t, pool, sideEffectTable)
+	})
 
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
 		t.Fatalf("acquire connection: %v", err)
 	}
-
 	defer conn.Release()
 
-	db := newPgxDB(newPgxPoolConn(conn), "")
+	migrator := New(Migrations{{
+		Version: 1,
+		Path:    "001-break-version-recording.sql",
+		SQL: fmt.Sprintf(
+			"CREATE TABLE %s (id integer); DROP TABLE %s",
+			sideEffectTable,
+			tableName,
+		),
+	}}, newPgxDB(newPgxPoolConn(conn), tableName))
 
-	if err := db.RunMigration(ctx, "CREATE TABLE baz (version serial); DROP TABLE baz"); err != nil {
-		t.Fatalf("run migration: %v", err)
+	err = migrator.Migrate(ctx)
+	if err == nil {
+		t.Fatal("Migrate() error=<nil>; want version recording error")
 	}
 
-	if err := db.RunMigration(ctx, "CREATE TABLE"); err == nil {
-		t.Fatal("run migration with broken query: want error; got no error")
-	}
-}
-
-func TestRunMigrationWrapsExecError(t *testing.T) {
-	t.Parallel()
-
-	execErr := errors.New("syntax failed")
-	db := newPgxDB(connFake{tx: &txFake{execErr: execErr}}, "")
-
-	err := db.RunMigration(context.Background(), "broken")
-	if !errors.Is(err, execErr) {
-		t.Fatalf("RunMigration() error=%v; want exec error", err)
+	if tableExists(ctx, t, pool, sideEffectTable) {
+		t.Fatalf("side effect table %s exists; want migration transaction rolled back", sideEffectTable)
 	}
 
-	if !strings.Contains(err.Error(), "execute migration SQL: syntax failed") {
-		t.Fatalf("RunMigration() error=%q; want execute migration SQL context", err)
+	if !tableExists(ctx, t, pool, tableName) {
+		t.Fatalf("migration table %s does not exist; want rollback to restore it", tableName)
 	}
 }
 
-func TestRunMigrationJoinsExecAndRollbackErrors(t *testing.T) {
-	t.Parallel()
-
-	execErr := errors.New("syntax failed")
-	rollbackErr := errors.New("rollback failed")
-	db := newPgxDB(connFake{tx: &txFake{
-		execErr:     execErr,
-		rollbackErr: rollbackErr,
-	}}, "")
-
-	err := db.RunMigration(context.Background(), "broken")
-	if !errors.Is(err, execErr) {
-		t.Fatalf("RunMigration() error=%v; want exec error", err)
+func TestPgxMigrateUsesTransactionScopedAdvisoryLock(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping long test")
 	}
 
-	if !errors.Is(err, rollbackErr) {
-		t.Fatalf("RunMigration() error=%v; want rollback error", err)
+	ctx := context.Background()
+	tableName := testTableName(t, "lock_cleanup")
+	lockCountTable := testTableName(t, "lock_counts")
+	pool := pgxPool(ctx, t)
+	dropTable(ctx, t, pool, tableName)
+	dropTable(ctx, t, pool, lockCountTable)
+	t.Cleanup(func() {
+		dropTable(ctx, t, pool, tableName)
+		dropTable(ctx, t, pool, lockCountTable)
+	})
+
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire connection: %v", err)
+	}
+	defer conn.Release()
+
+	migrator := New(Migrations{{
+		Version: 1,
+		Path:    "001-check-lock.sql",
+		SQL: fmt.Sprintf(`
+			CREATE TABLE %s (lock_count integer NOT NULL);
+			SELECT pg_advisory_unlock_all();
+			INSERT INTO %s (lock_count)
+			SELECT count(*)
+			FROM pg_locks
+			WHERE locktype = 'advisory'
+				AND pid = pg_backend_pid();
+		`, lockCountTable, lockCountTable),
+	}}, newPgxDB(newPgxPoolConn(conn), tableName))
+
+	if err := migrator.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate(): %v", err)
 	}
 
-	for _, want := range []string{
-		"execute migration SQL: syntax failed",
-		"rollback migration transaction: rollback failed",
-	} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("RunMigration() error=%q; want %q", err, want)
-		}
+	var lockCount int
+	if err := pool.QueryRow(ctx, "SELECT lock_count FROM "+lockCountTable).Scan(&lockCount); err != nil {
+		t.Fatalf("read lock count: %v", err)
+	}
+
+	if lockCount == 0 {
+		t.Fatal("migration observed no advisory lock after pg_advisory_unlock_all; want transaction-scoped advisory lock")
 	}
 }
 
-func TestRunMigrationPreservesPgError(t *testing.T) {
-	t.Parallel()
+func TestPgxMigratePreservesPgError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping long test")
+	}
+
+	ctx := context.Background()
+	tableName := testTableName(t, "pg_error")
+	pool := pgxPool(ctx, t)
+	dropTable(ctx, t, pool, tableName)
+	t.Cleanup(func() {
+		dropTable(ctx, t, pool, tableName)
+	})
+
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire connection: %v", err)
+	}
+	defer conn.Release()
 
 	const query = "CREATE TABLE"
-	pgErr := &pgconn.PgError{
-		Message:  "syntax error at or near \"TABLE\"",
-		Severity: "ERROR",
-		Code:     "42601",
-	}
-	db := newPgxDB(connFake{tx: &txFake{execErr: pgErr}}, "")
+	migrator := New(Migrations{{
+		Version: 1,
+		Path:    "001-broken.sql",
+		SQL:     query,
+	}}, newPgxDB(newPgxPoolConn(conn), tableName))
 
-	err := db.RunMigration(context.Background(), query)
+	err = migrator.Migrate(ctx)
 
 	var got *pgconn.PgError
 	if !errors.As(err, &got) {
-		t.Fatalf("RunMigration() error=%v; want pg error", err)
+		t.Fatalf("Migrate() error=%v; want pg error", err)
 	}
 
 	if got.SQLState() != "42601" {
 		t.Fatalf("PgError.SQLState()=%q; want %q", got.SQLState(), "42601")
 	}
 
+	for _, want := range []string{
+		"run migration 1 from file 001-broken.sql",
+		"execute migration SQL",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("Migrate() error=%q; want %q", err, want)
+		}
+	}
+
 	if strings.Contains(err.Error(), query) {
-		t.Fatalf("RunMigration() error=%q; should not include SQL query text", err)
+		t.Fatalf("Migrate() error=%q; should not include SQL query text", err)
 	}
 }
 
-func TestRunMigrationWrapsBeginError(t *testing.T) {
-	t.Parallel()
-
-	beginErr := errors.New("begin failed")
-	db := newPgxDB(connFake{beginErr: beginErr}, "")
-
-	err := db.RunMigration(context.Background(), "SELECT 1")
-	if !errors.Is(err, beginErr) {
-		t.Fatalf("RunMigration() error=%v; want begin error", err)
+func TestPgxMigrateWrapsCreateTableError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping long test")
 	}
 
-	if !strings.Contains(err.Error(), "begin migration transaction: begin failed") {
-		t.Fatalf("RunMigration() error=%q; want begin transaction context", err)
+	ctx := context.Background()
+	pool := pgxPool(ctx, t)
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire connection: %v", err)
 	}
-}
+	defer conn.Release()
 
-func TestRunMigrationWrapsCommitError(t *testing.T) {
-	t.Parallel()
+	migrator := New(nil, newPgxDB(newPgxPoolConn(conn), "broken table name"))
 
-	commitErr := errors.New("commit failed")
-	db := newPgxDB(connFake{tx: &txFake{commitErr: commitErr}}, "")
-
-	err := db.RunMigration(context.Background(), "SELECT 1")
-	if !errors.Is(err, commitErr) {
-		t.Fatalf("RunMigration() error=%v; want commit error", err)
+	err = migrator.Migrate(ctx)
+	if err == nil {
+		t.Fatal("Migrate() error=<nil>; want create table error")
 	}
 
-	if !strings.Contains(err.Error(), "commit migration transaction: commit failed") {
-		t.Fatalf("RunMigration() error=%q; want commit transaction context", err)
+	if !strings.Contains(err.Error(), "create schema migrations table") {
+		t.Fatalf("Migrate() error=%q; want create table context", err)
 	}
 }
 
-type txFake struct {
-	execErr     error
-	rollbackErr error
-	commitErr   error
-}
-
-func (tx *txFake) Begin(context.Context) (pgx.Tx, error) {
-	return nil, errors.New("unexpected nested transaction")
-}
-
-func (tx *txFake) Commit(context.Context) error {
-	return tx.commitErr
-}
-
-func (tx *txFake) Rollback(context.Context) error {
-	return tx.rollbackErr
-}
-
-func (tx *txFake) CopyFrom(context.Context, pgx.Identifier, []string, pgx.CopyFromSource) (int64, error) {
-	return 0, errors.New("unexpected copy from")
-}
-
-func (tx *txFake) SendBatch(context.Context, *pgx.Batch) pgx.BatchResults {
-	return nil
-}
-
-func (tx *txFake) LargeObjects() pgx.LargeObjects {
-	return pgx.LargeObjects{}
-}
-
-func (tx *txFake) Prepare(context.Context, string, string) (*pgconn.StatementDescription, error) {
-	return nil, errors.New("unexpected prepare")
-}
-
-func (tx *txFake) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
-	return pgconn.CommandTag{}, tx.execErr
-}
-
-func (tx *txFake) Query(context.Context, string, ...any) (pgx.Rows, error) {
-	return nil, errors.New("unexpected query")
-}
-
-func (tx *txFake) QueryRow(context.Context, string, ...any) pgx.Row {
-	return rowFake{}
-}
-
-func (tx *txFake) Conn() *pgx.Conn {
-	return nil
-}
-
-type connFake struct {
-	tx       *txFake
-	beginErr error
-}
-
-func (conn connFake) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
-	return pgconn.CommandTag{}, errors.New("unexpected exec")
-}
-
-func (conn connFake) QueryRow(context.Context, string, ...any) pgx.Row {
-	return rowFake{}
-}
-
-func (conn connFake) Begin(context.Context) (pgx.Tx, error) {
-	if conn.beginErr != nil {
-		return nil, conn.beginErr
+func TestPgxMigrateWrapsLastVersionScanError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping long test")
 	}
 
-	return conn.tx, nil
+	ctx := context.Background()
+	tableName := testTableName(t, "bad_versions")
+	pool := pgxPool(ctx, t)
+	dropTable(ctx, t, pool, tableName)
+	if _, err := pool.Exec(ctx, "CREATE TABLE "+tableName+" (version text PRIMARY KEY)"); err != nil {
+		t.Fatalf("create bad migration table: %v", err)
+	}
+	if _, err := pool.Exec(ctx, "INSERT INTO "+tableName+" (version) VALUES ('not-a-number')"); err != nil {
+		t.Fatalf("insert bad migration version: %v", err)
+	}
+	t.Cleanup(func() {
+		dropTable(ctx, t, pool, tableName)
+	})
+
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire connection: %v", err)
+	}
+	defer conn.Release()
+
+	migrator := New(nil, newPgxDB(newPgxPoolConn(conn), tableName))
+
+	err = migrator.Migrate(ctx)
+	if err == nil {
+		t.Fatal("Migrate() error=<nil>; want last version scan error")
+	}
+
+	if !strings.Contains(err.Error(), "last version") {
+		t.Fatalf("Migrate() error=%q; want last version context", err)
+	}
 }
 
-type rowFake struct{}
+func TestPgxMigrateWrapsSetLockIDError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping long test")
+	}
 
-func (rowFake) Scan(...any) error {
-	return errors.New("unexpected scan")
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, testDSN())
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	if err := conn.Close(ctx); err != nil {
+		t.Fatalf("close connection: %v", err)
+	}
+
+	migrator := New(nil, newPgxDB(newPgxConn(conn), testTableName(t, "closed_conn")))
+
+	err = migrator.Migrate(ctx)
+	if err == nil {
+		t.Fatal("Migrate() error=<nil>; want set lock id error")
+	}
+
+	if !strings.Contains(err.Error(), "set lock id") {
+		t.Fatalf("Migrate() error=%q; want set lock id context", err)
+	}
 }
 
 func pgxPool(ctx context.Context, t *testing.T) *pgxpool.Pool {
 	t.Helper()
 
-	cfg, err := pgxpool.ParseConfig(dsn)
+	cfg, err := pgxpool.ParseConfig(testDSN())
 	if err != nil {
 		t.Fatalf("parse config: %v", err)
 	}
@@ -317,4 +276,37 @@ func pgxPool(ctx context.Context, t *testing.T) *pgxpool.Pool {
 	t.Cleanup(pool.Close)
 
 	return pool
+}
+
+func testDSN() string {
+	if dsn := os.Getenv("MIG_TEST_DSN"); dsn != "" {
+		return dsn
+	}
+
+	return dsn
+}
+
+func testTableName(t *testing.T, prefix string) string {
+	t.Helper()
+
+	return fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
+}
+
+func dropTable(ctx context.Context, t *testing.T, pool *pgxpool.Pool, tableName string) {
+	t.Helper()
+
+	if _, err := pool.Exec(ctx, "DROP TABLE IF EXISTS "+tableName); err != nil {
+		t.Fatalf("drop table %s: %v", tableName, err)
+	}
+}
+
+func tableExists(ctx context.Context, t *testing.T, pool *pgxpool.Pool, tableName string) bool {
+	t.Helper()
+
+	var exists bool
+	if err := pool.QueryRow(ctx, "SELECT to_regclass($1) IS NOT NULL", tableName).Scan(&exists); err != nil {
+		t.Fatalf("check table %s exists: %v", tableName, err)
+	}
+
+	return exists
 }

@@ -1,0 +1,10 @@
+version: '3.9'
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: on-failure
+    environment:
+      - POSTGRES_DB=mig
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    ports:
+      - 127.0.0.1:15432:5432

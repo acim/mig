@@ -3,6 +3,7 @@ package mig_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,14 @@ import (
 )
 
 const dsn = "postgres://postgres@localhost:5432/mig"
+
+func testDSN() string {
+	if dsn := os.Getenv("MIG_TEST_DSN"); dsn != "" {
+		return dsn
+	}
+
+	return dsn
+}
 
 func TestMigrate(t *testing.T) {
 	t.Parallel()
@@ -51,6 +60,42 @@ type dbFake struct {
 	runMigrationErr error
 	setVersionErr   error
 	unlockErr       error
+}
+
+func (db *dbFake) Migrate(ctx context.Context, ms mig.Migrations) (err error) {
+	err = db.Lock(ctx)
+	if err != nil {
+		return fmt.Errorf("lock: %w", err)
+	}
+
+	defer func() {
+		if unlockErr := db.Unlock(ctx); unlockErr != nil {
+			err = errors.Join(err, fmt.Errorf("unlock: %w", unlockErr))
+		}
+	}()
+
+	if err := db.CreateSchemaMigrationsTable(ctx); err != nil {
+		return fmt.Errorf("create schema migrations table: %w", err)
+	}
+
+	lastVersion, err := db.LastVersion(ctx)
+	if err != nil {
+		return fmt.Errorf("last version: %w", err)
+	}
+
+	for _, m := range ms {
+		if m.Version > lastVersion {
+			if err := db.RunMigration(ctx, m.SQL); err != nil {
+				return fmt.Errorf("run migration %d from file %s: %w", m.Version, m.Path, err)
+			}
+
+			if err := db.SetLastVersion(ctx, m.Version); err != nil {
+				return fmt.Errorf("set last version %d: %w", m.Version, err)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (db *dbFake) Lock(context.Context) error {
@@ -227,7 +272,7 @@ func ExampleFromPgxPool() {
 
 	ctx := context.Background()
 
-	pool, err := pgxpool.New(ctx, dsn)
+	pool, err := pgxpool.New(ctx, testDSN())
 	if err != nil {
 		panic(err)
 	}
@@ -262,7 +307,7 @@ func ExampleFromPgx() {
 
 	ctx := context.Background()
 
-	conn, err := pgx.Connect(ctx, dsn)
+	conn, err := pgx.Connect(ctx, testDSN())
 	if err != nil {
 		panic(err)
 	}

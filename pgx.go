@@ -16,9 +16,13 @@ import (
 const lockID = 2854263694
 
 type pgxConn interface {
-	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	Begin(ctx context.Context) (pgx.Tx, error)
+}
+
+type pgxExecutor interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
 type pgxDB struct {
@@ -36,36 +40,22 @@ func newPgxDB(conn pgxConn, tableName string) *pgxDB {
 	return db
 }
 
-func (db *pgxDB) Lock(ctx context.Context) error {
-	if err := db.setLockID(ctx); err != nil {
-		return fmt.Errorf("set lock id: %w", err)
-	}
-
-	q := "SELECT pg_advisory_lock($1)"
-
-	if _, err := db.conn.Exec(ctx, q, db.lockID); err != nil {
-		return fmt.Errorf("exec: %w", err)
-	}
-
-	return nil
-}
-
-func (db *pgxDB) CreateSchemaMigrationsTable(ctx context.Context) error {
+func (db *pgxDB) createSchemaMigrationsTable(ctx context.Context, exec pgxExecutor) error {
 	q := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (version bigint PRIMARY KEY)", db.table)
 
-	if _, err := db.conn.Exec(ctx, q); err != nil {
+	if _, err := exec.Exec(ctx, q); err != nil {
 		return fmt.Errorf("exec: %w", err)
 	}
 
 	return nil
 }
 
-func (db *pgxDB) LastVersion(ctx context.Context) (uint64, error) {
+func (db *pgxDB) lastVersion(ctx context.Context, exec pgxExecutor) (uint64, error) {
 	q := "SELECT version FROM " + db.table
 
 	var version uint64
 
-	if err := db.conn.QueryRow(ctx, q).Scan(&version); err != nil {
+	if err := exec.QueryRow(ctx, q).Scan(&version); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, nil
 		}
@@ -76,10 +66,10 @@ func (db *pgxDB) LastVersion(ctx context.Context) (uint64, error) {
 	return version, nil
 }
 
-func (db *pgxDB) SetLastVersion(ctx context.Context, lastVersion uint64) error {
+func (db *pgxDB) setLastVersion(ctx context.Context, exec pgxExecutor, lastVersion uint64) error {
 	q := fmt.Sprintf("UPDATE %s SET version=$1", db.table)
 
-	ct, err := db.conn.Exec(ctx, q, lastVersion)
+	ct, err := exec.Exec(ctx, q, lastVersion)
 	if err != nil {
 		return fmt.Errorf("exec: %w", err)
 	}
@@ -90,41 +80,67 @@ func (db *pgxDB) SetLastVersion(ctx context.Context, lastVersion uint64) error {
 
 	q = fmt.Sprintf("INSERT INTO %s (version) VALUES ($1)", db.table)
 
-	if _, err := db.conn.Exec(ctx, q, lastVersion); err != nil {
+	if _, err := exec.Exec(ctx, q, lastVersion); err != nil {
 		return fmt.Errorf("exec: %w", err)
 	}
 
 	return nil
 }
 
-func (db *pgxDB) RunMigration(ctx context.Context, query string) error {
+func (db *pgxDB) Migrate(ctx context.Context, ms Migrations) (err error) {
+	if err := db.setLockID(ctx); err != nil {
+		return fmt.Errorf("set lock id: %w", err)
+	}
+
 	tx, err := db.conn.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin migration transaction: %w", err)
 	}
 
-	if _, err := tx.Exec(ctx, query); err != nil {
-		err = fmt.Errorf("execute migration SQL: %w", err)
-		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
-			return errors.Join(err, fmt.Errorf("rollback migration transaction: %w", rollbackErr))
+	done := false
+	defer func() {
+		if done {
+			return
 		}
 
-		return err
+		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
+			err = errors.Join(err, fmt.Errorf("rollback migration transaction: %w", rollbackErr))
+		}
+	}()
+
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", db.lockID); err != nil {
+		return fmt.Errorf("lock migration transaction: %w", err)
+	}
+
+	if err := db.createSchemaMigrationsTable(ctx, tx); err != nil {
+		return fmt.Errorf("create schema migrations table: %w", err)
+	}
+
+	lastVersion, err := db.lastVersion(ctx, tx)
+	if err != nil {
+		return fmt.Errorf("last version: %w", err)
+	}
+
+	for _, m := range ms {
+		if m.Version <= lastVersion {
+			continue
+		}
+
+		if _, err := tx.Exec(ctx, m.SQL); err != nil {
+			return fmt.Errorf("run migration %d from file %s: execute migration SQL: %w", m.Version, m.Path, err)
+		}
+
+		if err := db.setLastVersion(ctx, tx, m.Version); err != nil {
+			return fmt.Errorf("set last version %d: %w", m.Version, err)
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
+		done = true
 		return fmt.Errorf("commit migration transaction: %w", err)
 	}
 
-	return nil
-}
-
-func (db *pgxDB) Unlock(ctx context.Context) error {
-	q := "SELECT pg_advisory_unlock($1)"
-
-	if _, err := db.conn.Exec(ctx, q, db.lockID); err != nil {
-		return fmt.Errorf("exec: %w", err)
-	}
+	done = true
 
 	return nil
 }

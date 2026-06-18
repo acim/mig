@@ -12,19 +12,21 @@
 
 ## Critical
 
-- [ ] **Prevent advisory lock leaks when migration context is canceled**
+- [x] **Prevent advisory lock leaks when migration context is canceled**
   - Files: `mig.go`, `pgx.go`, `mig_test.go`, `pgx_internal_test.go`
   - Finding: `Mig.Migrate` defers `Unlock(ctx)` with the same caller context used for migration work. Because `pgxDB.Lock` uses a session-level `pg_advisory_lock`, a canceled context can prevent `pg_advisory_unlock` from running and can release a pooled connection that still holds the lock.
   - References: `mig.go:79`, `pgx.go:44`, `pgx.go:122`
   - Fix direction: Use a fresh bounded cleanup context, `context.WithoutCancel`, or a transaction-scoped lock design. Add a regression test that proves unlock is attempted even when the migration context is canceled.
   - Verification: `go test -run 'TestMigrate|TestPgx|Test.*Lock|Test.*Unlock' -count=1 ./...`
+  - Fixed: pgx migrations now use `pg_advisory_xact_lock` inside the migration transaction instead of session-level lock/unlock cleanup. Verified with `TestPgxMigrateUsesTransactionScopedAdvisoryLock` against PostgreSQL from `docker-compose.test.yml`.
 
-- [ ] **Make migration SQL and version recording atomic**
+- [x] **Make migration SQL and version recording atomic**
   - Files: `mig.go`, `pgx.go`, `pgx_internal_test.go`, `mig_test.go`
   - Finding: `pgxDB.RunMigration` commits migration SQL before `Mig.Migrate` records the new version with `SetLastVersion`. If version recording fails after DDL/data commits, the next run can reapply a non-idempotent migration.
   - References: `pgx.go:100`, `pgx.go:115`, `mig.go:96`, `mig.go:100`
   - Fix direction: Record the migration version in the same transaction as the migration SQL. This likely requires changing the `Database` contract or adding a pgx-specific transactional method with tests for rollback on version-update failure.
   - Verification: Add a failing regression test first, then run `go test -run 'TestMigrate|TestRunMigration' -count=1 ./...`
+  - Fixed: `Database` now exposes a migration-level operation and pgx records the version in the same transaction as the migration SQL. Verified with `TestPgxMigrateRollsBackMigrationWhenVersionRecordingFails` against PostgreSQL from `docker-compose.test.yml`.
 
 ## Important
 
