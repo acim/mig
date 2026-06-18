@@ -120,12 +120,13 @@
   - Verification: `make start` and `make stop` with Podman, or a documented equivalent.
   - Fixed: Makefile now defaults `COMPOSE` to `podman-compose`, while allowing override for Docker Compose users; README documents the default and override. Verified with `make -n start`, `make -n stop`, and `podman-compose config`. A live `make start` reached `podman-compose` but could not bind `127.0.0.1:5432` because an existing local listener was already using the port; `make stop` completed afterward.
 
-- [ ] **Pin the Adminer image used by local compose**
+- [x] **Pin the Adminer image used by local compose**
   - Files: `docker-compose.yml`
   - Finding: `adminer` is unpinned, so local tooling can change unexpectedly as the tag moves.
   - References: `docker-compose.yml:12`
   - Fix direction: Pin to a concrete supported Adminer tag.
   - Verification: `podman-compose config`
+  - Fixed: local compose now uses `adminer:5.4.2`. Verified with `podman-compose config`.
 
 ## Repository Reminders
 
