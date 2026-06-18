@@ -31,13 +31,7 @@ func TestFromDir(t *testing.T) {
 		t.Fatalf("from directory: %v", err)
 	}
 
-	for i := range got {
-		if got[i].Version != want[i].Version ||
-			got[i].Name != want[i].Name ||
-			got[i].Path != want[i].Path {
-			t.Errorf("FromFiles() = %v; want %v", got, want)
-		}
-	}
+	assertMigrations(t, got, want)
 }
 
 func TestFromEmbedFS(t *testing.T) {
@@ -50,13 +44,7 @@ func TestFromEmbedFS(t *testing.T) {
 		t.Fatalf("from embed fs: %v", err)
 	}
 
-	for i := range got {
-		if got[i].Version != want[i].Version ||
-			got[i].Name != want[i].Name ||
-			got[i].Path != want[i].Path {
-			t.Errorf("FromFiles() = %v; want %v", got, want)
-		}
-	}
+	assertMigrations(t, got, want)
 }
 
 func TestFromDirReturnsReadDirError(t *testing.T) {
@@ -152,15 +140,49 @@ func TestFromDirReturnsDuplicateVersionError(t *testing.T) {
 
 func want() mig.Migrations {
 	return mig.Migrations{
-		{ //nolint:exhaustruct
+		{
 			Version: 1,
 			Name:    "",
 			Path:    "1.sql",
+			SQL: `CREATE TABLE IF NOT EXISTS users (
+	user_id serial PRIMARY KEY,
+	username VARCHAR (50) UNIQUE NOT NULL
+);
+
+INSERT INTO users (username) VALUES ('zika');
+
+DROP TABLE users;
+`,
 		},
-		{ //nolint:exhaustruct
+		{
 			Version: 2,
 			Name:    "",
 			Path:    "02.sql",
+			SQL: `CREATE TABLE accounts (
+	user_id serial PRIMARY KEY,
+	username VARCHAR ( 50 ) UNIQUE NOT NULL,
+	password VARCHAR ( 50 ) NOT NULL,
+	email VARCHAR ( 255 ) UNIQUE NOT NULL,
+	created_on TIMESTAMP NOT NULL,
+    last_login TIMESTAMP
+);
+
+DROP TABLE accounts;
+`,
 		},
+	}
+}
+
+func assertMigrations(t *testing.T, got, want mig.Migrations) {
+	t.Helper()
+
+	if len(got) != len(want) {
+		t.Fatalf("len(migrations)=%d; want %d", len(got), len(want))
+	}
+
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("migration[%d]=%#v; want %#v", i, got[i], want[i])
+		}
 	}
 }

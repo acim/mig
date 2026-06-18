@@ -96,12 +96,13 @@
 
 ## Minor
 
-- [ ] **Harden migration loader tests with length and SQL-content assertions**
+- [x] **Harden migration loader tests with length and SQL-content assertions**
   - Files: `migrations_test.go`
   - Finding: `TestFromDir` and `TestFromEmbedFS` iterate over `got` without asserting `len(got) == len(want)`, so an empty result could pass.
   - References: `migrations_test.go:34`, `migrations_test.go:53`
   - Fix direction: Assert lengths before element checks and include SQL content checks.
   - Verification: `go test -run 'TestFromDir|TestFromEmbedFS' -count=1 ./...`
+  - Fixed: loader tests now assert migration slice length and compare full migration values, including SQL content. Verified with focused loader tests, fresh race/coverage, and `make test`; coverage remained `94.4%`.
 
 - [ ] **Make short tests hermetic or clearly separate examples/integration tests**
   - Files: `mig_test.go`, `README.md`, `Makefile`
