@@ -54,12 +54,13 @@
   - Verification: Add tests for valid identifiers, invalid injection-like names, and schema-qualified names if supported.
   - Fixed: `WithCustomTable` now rejects invalid names with `ErrInvalidTableName`, `FromPgxPool` returns that error before acquiring a connection, `Mig.Migrate` returns it before database execution, and pgx renders accepted names with `pgx.Identifier.Sanitize()`. Documented the accepted identifier format in README. Verified with focused invalid-name tests, schema-qualified real PostgreSQL migration test, and fresh race/coverage test.
 
-- [ ] **Enforce or remove the single-row `schema_migrations` assumption**
+- [x] **Enforce or remove the single-row `schema_migrations` assumption**
   - Files: `pgx.go`, `pgx_internal_test.go`
   - Finding: The table schema allows multiple rows because `version bigint PRIMARY KEY` permits many distinct versions. `LastVersion` selects without `ORDER BY` or `LIMIT`, and `SetLastVersion` updates all rows.
   - References: `pgx.go:54`, `pgx.go:64`, `pgx.go:80`
   - Fix direction: Either enforce one row explicitly or switch to append-only version history and query `max(version)`.
   - Verification: Add a database-backed test for multiple existing rows or a deterministic fake test that covers the intended invariant.
+  - Fixed: switched pgx to append-only migration history. `lastVersion` now reads `COALESCE(max(version), 0)` and `setLastVersion` inserts the applied version instead of updating all rows. Verified with a real PostgreSQL regression test for pre-existing rows and fresh race/coverage test.
 
 - [ ] **Make the README coverage badge trustworthy**
   - Files: `README.md`, `Makefile`

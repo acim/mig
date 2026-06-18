@@ -55,15 +55,11 @@ func (db *pgxDB) createSchemaMigrationsTable(ctx context.Context, exec pgxExecut
 }
 
 func (db *pgxDB) lastVersion(ctx context.Context, exec pgxExecutor) (uint64, error) {
-	q := "SELECT version FROM " + db.table
+	q := "SELECT COALESCE(max(version), 0) FROM " + db.table
 
 	var version uint64
 
 	if err := exec.QueryRow(ctx, q).Scan(&version); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, nil
-		}
-
 		return 0, fmt.Errorf("scan: %w", err)
 	}
 
@@ -71,18 +67,7 @@ func (db *pgxDB) lastVersion(ctx context.Context, exec pgxExecutor) (uint64, err
 }
 
 func (db *pgxDB) setLastVersion(ctx context.Context, exec pgxExecutor, lastVersion uint64) error {
-	q := fmt.Sprintf("UPDATE %s SET version=$1", db.table)
-
-	ct, err := exec.Exec(ctx, q, lastVersion)
-	if err != nil {
-		return fmt.Errorf("exec: %w", err)
-	}
-
-	if ct.RowsAffected() == 1 {
-		return nil
-	}
-
-	q = fmt.Sprintf("INSERT INTO %s (version) VALUES ($1)", db.table)
+	q := fmt.Sprintf("INSERT INTO %s (version) VALUES ($1)", db.table)
 
 	if _, err := exec.Exec(ctx, q, lastVersion); err != nil {
 		return fmt.Errorf("exec: %w", err)

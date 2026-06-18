@@ -366,6 +366,64 @@ func TestPgxMigrateWithSchemaQualifiedCustomTable(t *testing.T) {
 	}
 }
 
+func TestPgxMigrateUsesMaxVersionFromAppendOnlyHistory(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping long test")
+	}
+
+	ctx := context.Background()
+	tableName := testTableName(t, "append_only_versions")
+	sideEffectTable := testTableName(t, "append_only_side_effect")
+	pool := pgxPool(ctx, t)
+	dropTable(ctx, t, pool, tableName)
+	dropTable(ctx, t, pool, sideEffectTable)
+	if _, err := pool.Exec(ctx, "CREATE TABLE "+tableName+" (version bigint PRIMARY KEY)"); err != nil {
+		t.Fatalf("create migration table %s: %v", tableName, err)
+	}
+	if _, err := pool.Exec(ctx, "INSERT INTO "+tableName+" (version) VALUES (1), (2)"); err != nil {
+		t.Fatalf("seed migration table %s: %v", tableName, err)
+	}
+	t.Cleanup(func() {
+		dropTable(ctx, t, pool, tableName)
+		dropTable(ctx, t, pool, sideEffectTable)
+	})
+
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire connection: %v", err)
+	}
+	defer conn.Release()
+
+	migrator := New(Migrations{
+		{
+			Version: 2,
+			Path:    "002-already-applied.sql",
+			SQL:     "CREATE TABLE",
+		},
+		{
+			Version: 3,
+			Path:    "003-next.sql",
+			SQL:     "CREATE TABLE " + sideEffectTable + " (id integer)",
+		},
+	}, newPgxDB(newPgxPoolConn(conn), tableName))
+
+	if err := migrator.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate(): %v", err)
+	}
+
+	if !tableExists(ctx, t, pool, sideEffectTable) {
+		t.Fatalf("side effect table %s does not exist; want next migration to run", sideEffectTable)
+	}
+
+	var count, maxVersion uint64
+	if err := pool.QueryRow(ctx, "SELECT count(*), max(version) FROM "+tableName).Scan(&count, &maxVersion); err != nil {
+		t.Fatalf("read migration history summary: %v", err)
+	}
+	if count != 3 || maxVersion != 3 {
+		t.Fatalf("migration history count=%d max=%d; want count=3 max=3", count, maxVersion)
+	}
+}
+
 func pgxPool(ctx context.Context, t *testing.T) *pgxpool.Pool {
 	t.Helper()
 
