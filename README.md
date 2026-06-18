@@ -51,9 +51,11 @@ or
 
 ## Run tests
 
-- `make start` to start the docker-compose with PostgreSQL and [adminer](https://github.com/vrana/adminer)
+- `make start` to start the compose stack with PostgreSQL and [adminer](https://github.com/vrana/adminer)
 - `make test` to run all tests
 - `make stop` so that new `make start` gets clean database
+
+The Makefile uses `podman-compose` by default. Set `COMPOSE=docker-compose` if you want to run the same targets with Docker Compose.
 
 The local compose services bind to loopback only: PostgreSQL is available at `127.0.0.1:5432`, and Adminer is available at `http://127.0.0.1:8080`.
 

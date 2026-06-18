@@ -1,13 +1,15 @@
 .PHONY: lint start stop test update
 
+COMPOSE ?= podman-compose
+
 lint:
 	@golangci-lint run
 
 start:
-	@docker-compose up --build --renew-anon-volumes
+	@$(COMPOSE) up --build --renew-anon-volumes
 
 stop:
-	@docker-compose down
+	@$(COMPOSE) down
 
 test:
 	@go test -race -coverprofile=coverage.out ./...

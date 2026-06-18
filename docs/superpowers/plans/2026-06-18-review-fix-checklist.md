@@ -112,12 +112,13 @@
   - Verification: `go test -short ./...`
   - Fixed: removed `// Output:` markers from the PostgreSQL-backed examples so they compile as examples but do not execute during short/unit tests. Verified with `go test -short -run '^Example' -count=1 ./...`, `go test -short -count=1 ./...`, fresh race/coverage, and `make test`; coverage badge updated to `90.3%`.
 
-- [ ] **Document Podman-based local workflow**
+- [x] **Document Podman-based local workflow**
   - Files: `README.md`, `Makefile`
   - Finding: README and Makefile use `docker-compose`, but local policy says Podman is available and should be used unless Docker is specifically required.
   - References: `README.md:52`, `Makefile:7`
   - Fix direction: Switch commands to `podman-compose` or make the compose command configurable.
   - Verification: `make start` and `make stop` with Podman, or a documented equivalent.
+  - Fixed: Makefile now defaults `COMPOSE` to `podman-compose`, while allowing override for Docker Compose users; README documents the default and override. Verified with `make -n start`, `make -n stop`, and `podman-compose config`. A live `make start` reached `podman-compose` but could not bind `127.0.0.1:5432` because an existing local listener was already using the port; `make stop` completed afterward.
 
 - [ ] **Pin the Adminer image used by local compose**
   - Files: `docker-compose.yml`
