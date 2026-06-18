@@ -260,6 +260,44 @@ func TestPgxMigrateWrapsSetLockIDError(t *testing.T) {
 	}
 }
 
+func TestPgxMigrateRejectsZeroVersionMigration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping long test")
+	}
+
+	ctx := context.Background()
+	tableName := testTableName(t, "zero_versions")
+	sideEffectTable := testTableName(t, "zero_side_effects")
+	pool := pgxPool(ctx, t)
+	dropTable(ctx, t, pool, tableName)
+	dropTable(ctx, t, pool, sideEffectTable)
+	t.Cleanup(func() {
+		dropTable(ctx, t, pool, tableName)
+		dropTable(ctx, t, pool, sideEffectTable)
+	})
+
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire connection: %v", err)
+	}
+	defer conn.Release()
+
+	migrator := New(Migrations{{
+		Version: 0,
+		Path:    "000-invalid.sql",
+		SQL:     "CREATE TABLE " + sideEffectTable + " (id integer)",
+	}}, newPgxDB(newPgxPoolConn(conn), tableName))
+
+	err = migrator.Migrate(ctx)
+	if !errors.Is(err, ErrInvalidVersion) {
+		t.Fatalf("Migrate() error=%v; want invalid version error", err)
+	}
+
+	if tableExists(ctx, t, pool, sideEffectTable) {
+		t.Fatalf("side effect table %s exists; want zero-version migration rejected before execution", sideEffectTable)
+	}
+}
+
 func pgxPool(ctx context.Context, t *testing.T) *pgxpool.Pool {
 	t.Helper()
 

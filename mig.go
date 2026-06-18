@@ -65,6 +65,10 @@ func FromPgx(ms Migrations, conn *pgx.Conn, opts ...Option) *Mig {
 }
 
 func (d *Mig) Migrate(ctx context.Context) error {
+	if err := d.ms.Validate(); err != nil {
+		return err
+	}
+
 	return d.db.Migrate(ctx, d.ms)
 }
 

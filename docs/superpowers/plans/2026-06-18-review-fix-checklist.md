@@ -30,19 +30,21 @@
 
 ## Important
 
-- [ ] **Reject migration version zero**
+- [x] **Reject migration version zero**
   - Files: `migrations.go`, `migrations_test.go`
   - Finding: `0.sql` or `000-name.sql` loads as version `0`, but fresh databases also report last version `0`, and `Migrate` only applies migrations with `Version > lastVersion`; the migration is silently skipped forever.
   - References: `migrations.go:61`, `pgx.go:69`, `mig.go:95`
   - Fix direction: Return `ErrInvalidVersion` for parsed version `0`. Add `FromDir` and, if practical, `FromEmbedFS` coverage.
   - Verification: `go test -run 'TestFrom.*Version' -count=1 ./...`
+  - Fixed: loader parsing rejects version `0`, and `Mig.Migrate` validates direct `Migrations` construction before database execution. Verified with `TestFromDirReturnsInvalidVersionErrorForZeroVersion` and real PostgreSQL-backed `TestPgxMigrateRejectsZeroVersionMigration`.
 
-- [ ] **Return an error for overflowing migration version prefixes**
+- [x] **Return an error for overflowing migration version prefixes**
   - Files: `migrations.go`, `migrations_test.go`
   - Finding: `strconv.ParseUint` errors are ignored, so an overflowing prefix can become `math.MaxUint64` and poison future version ordering/state.
   - References: `migrations.go:61`
   - Fix direction: Check the parse error and wrap `ErrInvalidVersion` with the offending filename.
   - Verification: `go test -run 'TestFrom.*Version' -count=1 ./...`
+  - Fixed: loader parsing now checks `strconv.ParseUint` errors and returns `ErrInvalidVersion` for overflowing prefixes. Verified with `TestFromDirReturnsInvalidVersionErrorForOverflowingVersion`.
 
 - [ ] **Make custom table names safe SQL identifiers**
   - Files: `mig.go`, `pgx.go`, `pgx_internal_test.go`, `README.md`

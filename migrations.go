@@ -58,7 +58,10 @@ func migrations(fS fs.FS, files []fs.DirEntry, path string) (Migrations, error) 
 			return nil, fmt.Errorf("%w: %s", ErrInvalidVersion, filepath.Base(fileName))
 		}
 
-		version, _ := strconv.ParseUint(id, 10, 64)
+		version, err := strconv.ParseUint(id, 10, 64)
+		if err != nil || version == 0 {
+			return nil, fmt.Errorf("%w: %s", ErrInvalidVersion, filepath.Base(fileName))
+		}
 
 		if seen[version] {
 			return nil, fmt.Errorf("%w: %d", ErrDuplicateVersion, version)
@@ -106,6 +109,16 @@ type Migration struct {
 	Name    string
 	Path    string
 	SQL     string
+}
+
+func (ms Migrations) Validate() error {
+	for _, m := range ms {
+		if m.Version == 0 {
+			return fmt.Errorf("%w: %s", ErrInvalidVersion, m.Path)
+		}
+	}
+
+	return nil
 }
 
 func numberPrefix(s string) string {

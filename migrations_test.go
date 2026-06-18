@@ -99,6 +99,41 @@ func TestFromDirReturnsInvalidVersionError(t *testing.T) {
 	}
 }
 
+func TestFromDirReturnsInvalidVersionErrorForZeroVersion(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{"0.sql", "000-initial.sql"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, name), []byte("SELECT 1"), 0o600); err != nil {
+				t.Fatalf("write migration: %v", err)
+			}
+
+			_, err := mig.FromDir(dir)
+			if !errors.Is(err, mig.ErrInvalidVersion) {
+				t.Fatalf("FromDir() error=%v; want invalid version error", err)
+			}
+		})
+	}
+}
+
+func TestFromDirReturnsInvalidVersionErrorForOverflowingVersion(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	name := "18446744073709551616-too-large.sql"
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("SELECT 1"), 0o600); err != nil {
+		t.Fatalf("write migration: %v", err)
+	}
+
+	_, err := mig.FromDir(dir)
+	if !errors.Is(err, mig.ErrInvalidVersion) {
+		t.Fatalf("FromDir() error=%v; want invalid version error", err)
+	}
+}
+
 func TestFromDirReturnsDuplicateVersionError(t *testing.T) {
 	t.Parallel()
 
