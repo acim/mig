@@ -124,8 +124,9 @@
 
 ## Repository Reminders
 
-- [ ] **Confirm GitHub CodeQL/code scanning is enabled**
+- [x] **Confirm GitHub CodeQL/code scanning is enabled**
   - This repository contains Go code. If CodeQL/code scanning is not enabled in GitHub repository settings or workflows, enable it or document why it is intentionally omitted.
+  - Fixed: human confirmed CodeQL/code scanning is enabled for the repository.
 
 - [x] **Keep blocking GitHub Actions workflow linting**
   - The main pipeline already includes a blocking `actionlint` job using `raven-actions/actionlint@v2`.
