@@ -55,6 +55,8 @@ or
 - `make test` to run all tests
 - `make stop` so that new `make start` gets clean database
 
+The local compose services bind to loopback only: PostgreSQL is available at `127.0.0.1:5432`, and Adminer is available at `http://127.0.0.1:8080`.
+
 ## License
 
 Licensed under either of

@@ -78,19 +78,21 @@
   - Verification: `make lint` or the new CI lint target, plus `actionlint .github/workflows/pipeline.yaml .github/workflows/update-deps.yaml`
   - Fixed: `make lint` now runs non-mutating `golangci-lint run`. The workflow continues to call `make lint`, now validating without rewriting files. Verified with `make lint` and `actionlint .github/workflows/pipeline.yaml .github/workflows/update-deps.yaml`.
 
-- [ ] **Bind local compose services to loopback**
+- [x] **Bind local compose services to loopback**
   - Files: `docker-compose.yml`, `README.md`
   - Finding: Local compose exposes trust-auth PostgreSQL on `5432:5432` and Adminer on `8080:8080`, which can expose passwordless database access beyond the local machine.
   - References: `docker-compose.yml:8`, `docker-compose.yml:10`, `docker-compose.yml:19`
   - Fix direction: Bind both published ports to `127.0.0.1`.
   - Verification: `podman-compose config`
+  - Fixed: local compose now binds PostgreSQL to `127.0.0.1:5432` and Adminer to `127.0.0.1:8080`; README documents both localhost endpoints. Verified with `podman-compose config`.
 
-- [ ] **Add Go module Dependabot coverage or document the alternative**
+- [x] **Add Go module Dependabot coverage or document the alternative**
   - Files: `.github/dependabot.yml`, `.github/workflows/update-deps.yaml`
   - Finding: Dependabot only watches GitHub Actions. Go module updates rely on a scheduled reusable workflow with a PAT secret.
   - References: `.github/dependabot.yml:8`, `.github/workflows/update-deps.yaml:5`, `go.mod:5`
   - Fix direction: Add a `gomod` Dependabot entry unless the reusable workflow is intentionally the dependency-update policy, in which case document that decision.
   - Verification: `actionlint .github/workflows/pipeline.yaml .github/workflows/update-deps.yaml`
+  - Fixed: Dependabot now watches Go modules weekly via a `gomod` entry for `/`. Verified with `actionlint .github/workflows/pipeline.yaml .github/workflows/update-deps.yaml` and YAML parsing of `.github/dependabot.yml`.
 
 ## Minor
 
