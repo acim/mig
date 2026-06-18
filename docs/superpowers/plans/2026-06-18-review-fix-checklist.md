@@ -62,19 +62,21 @@
   - Verification: Add a database-backed test for multiple existing rows or a deterministic fake test that covers the intended invariant.
   - Fixed: switched pgx to append-only migration history. `lastVersion` now reads `COALESCE(max(version), 0)` and `setLastVersion` inserts the applied version instead of updating all rows. Verified with a real PostgreSQL regression test for pre-existing rows and fresh race/coverage test.
 
-- [ ] **Make the README coverage badge trustworthy**
+- [x] **Make the README coverage badge trustworthy**
   - Files: `README.md`, `Makefile`
   - Finding: README advertises `91.2%`, while short/unit-only coverage observed during review was `53.3%`. The full coverage command depends on the expected local PostgreSQL instance and could not be refreshed because `localhost:5432` was occupied by a different database.
   - References: `README.md:6`, `Makefile:13`, `AGENTS.md:9`
   - Fix direction: After code/test fixes, run the real coverage command against the intended PostgreSQL service and update the badge to match the generated total.
   - Verification: `make test`
+  - Fixed: `make test` now compares the generated coverage total with the README coverage badge and fails if they differ. Verified by temporarily setting the badge to `94.3%` and observing `make test` fail against measured `94.4%`, then restoring the badge and rerunning fresh race/coverage plus `make test`.
 
-- [ ] **Use non-mutating lint in CI**
+- [x] **Use non-mutating lint in CI**
   - Files: `Makefile`, `.github/workflows/pipeline.yaml`
   - Finding: CI delegates to `make lint`, and `make lint` runs `golangci-lint run --fix`. CI should validate committed code, not rewrite the checkout.
   - References: `Makefile:3`, `.github/workflows/pipeline.yaml:20`
   - Fix direction: Add a non-mutating lint target for CI, keep a separate local fix target if desired, and point the workflow at the non-mutating target.
   - Verification: `make lint` or the new CI lint target, plus `actionlint .github/workflows/pipeline.yaml .github/workflows/update-deps.yaml`
+  - Fixed: `make lint` now runs non-mutating `golangci-lint run`. The workflow continues to call `make lint`, now validating without rewriting files. Verified with `make lint` and `actionlint .github/workflows/pipeline.yaml .github/workflows/update-deps.yaml`.
 
 - [ ] **Bind local compose services to loopback**
   - Files: `docker-compose.yml`, `README.md`
