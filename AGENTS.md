@@ -12,3 +12,7 @@
 
 - Do not introduce third-party dependencies without human approval.
 - When a third-party dependency would be useful, explain why it is the best fit and ask for approval before adding it.
+
+## GitHub Security
+
+- GitHub CodeQL/code scanning default setup is already enabled for this repository for Go and GitHub Actions, with the default query suite on a weekly schedule.
