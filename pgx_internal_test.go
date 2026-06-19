@@ -61,6 +61,21 @@ func TestPgxLockIDUsesCanonicalTableName(t *testing.T) {
 	}
 }
 
+func TestPgxMigrateWrapsBeginError(t *testing.T) {
+	t.Parallel()
+
+	db := newPgxDB(lockIdentityConn{database: "mig", schema: "public"}, "schema_migrations")
+
+	err := db.Migrate(context.Background(), nil)
+	if err == nil {
+		t.Fatal("Migrate() error=<nil>; want begin error")
+	}
+
+	if !strings.Contains(err.Error(), "begin migration transaction") {
+		t.Fatalf("Migrate() error=%q; want begin transaction context", err)
+	}
+}
+
 func TestPgxMigrateRollsBackMigrationWhenVersionRecordingFails(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping long test")

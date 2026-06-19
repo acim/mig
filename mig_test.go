@@ -185,6 +185,35 @@ func TestFromPgxPoolWithAcquireConnectionTimeout(t *testing.T) {
 	}
 }
 
+func TestFromPgxPoolReturnsAcquireError(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, "postgres://postgres@127.0.0.1:1/mig")
+	if err != nil {
+		t.Fatalf("new pool: %v", err)
+	}
+	defer pool.Close()
+
+	migrator, cleanup, err := mig.FromPgxPool(
+		mig.Migrations{},
+		pool,
+		mig.WithAcquireConnectionTimeout(time.Nanosecond),
+	)
+	if err == nil {
+		t.Fatal("FromPgxPool() error=<nil>; want acquire error")
+	}
+	if !strings.Contains(err.Error(), "acquire connection") {
+		t.Fatalf("FromPgxPool() error=%q; want acquire connection context", err)
+	}
+	if migrator != nil {
+		t.Fatalf("FromPgxPool() migrator=%v; want nil", migrator)
+	}
+	if cleanup != nil {
+		t.Fatal("FromPgxPool() cleanup is not nil")
+	}
+}
+
 func (db *dbFake) Lock(context.Context) error {
 	db.l = true
 

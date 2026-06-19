@@ -137,6 +137,30 @@ func TestFromDirReturnsInvalidVersionErrorForPostgresBigintOverflow(t *testing.T
 	}
 }
 
+func TestFromDirIgnoresNonMigrationEntries(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "001-dir.sql"), 0o700); err != nil {
+		t.Fatalf("make migration-like directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("ignored"), 0o600); err != nil {
+		t.Fatalf("write ignored file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "001-real.sql"), []byte("SELECT 1"), 0o600); err != nil {
+		t.Fatalf("write migration: %v", err)
+	}
+
+	got, err := mig.FromDir(dir)
+	if err != nil {
+		t.Fatalf("FromDir(): %v", err)
+	}
+
+	if len(got) != 1 || got[0].Path != "001-real.sql" {
+		t.Fatalf("FromDir() migrations=%#v; want only 001-real.sql", got)
+	}
+}
+
 func TestFromDirReturnsDuplicateVersionError(t *testing.T) {
 	t.Parallel()
 
