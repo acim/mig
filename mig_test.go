@@ -129,6 +129,26 @@ func TestMigrateReturnsInvalidTableNameError(t *testing.T) {
 	}
 }
 
+func TestMigrateReturnsInvalidVersionErrorForPostgresBigintOverflow(t *testing.T) {
+	t.Parallel()
+
+	db := &dbFake{} //nolint:exhaustruct
+	m := mig.New(mig.Migrations{{
+		Version: 9223372036854775808,
+		Path:    "9223372036854775808-too-large.sql",
+		SQL:     "SELECT 1",
+	}}, db)
+
+	err := m.Migrate(context.Background())
+	if !errors.Is(err, mig.ErrInvalidVersion) {
+		t.Fatalf("Migrate() error=%v; want invalid version error", err)
+	}
+
+	if db.migrateCalled {
+		t.Fatal("database Migrate called for invalid migration version")
+	}
+}
+
 func (db *dbFake) Lock(context.Context) error {
 	db.l = true
 

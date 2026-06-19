@@ -122,6 +122,21 @@ func TestFromDirReturnsInvalidVersionErrorForOverflowingVersion(t *testing.T) {
 	}
 }
 
+func TestFromDirReturnsInvalidVersionErrorForPostgresBigintOverflow(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	name := "9223372036854775808-too-large.sql"
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("SELECT 1"), 0o600); err != nil {
+		t.Fatalf("write migration: %v", err)
+	}
+
+	_, err := mig.FromDir(dir)
+	if !errors.Is(err, mig.ErrInvalidVersion) {
+		t.Fatalf("FromDir() error=%v; want invalid version error", err)
+	}
+}
+
 func TestFromDirReturnsDuplicateVersionError(t *testing.T) {
 	t.Parallel()
 

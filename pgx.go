@@ -26,15 +26,17 @@ type pgxExecutor interface {
 }
 
 type pgxDB struct {
-	table  string
-	lockID string
-	conn   pgxConn
+	table         string
+	tableLockName string
+	lockID        string
+	conn          pgxConn
 }
 
 func newPgxDB(conn pgxConn, tableName string) *pgxDB {
 	db := &pgxDB{ //nolint:exhaustruct
-		table: sanitizeTableName(tableName),
-		conn:  conn,
+		table:         sanitizeTableName(tableName),
+		tableLockName: tableName,
+		conn:          conn,
 	}
 
 	return db
@@ -143,7 +145,7 @@ func (db *pgxDB) setLockID(ctx context.Context) error {
 		return fmt.Errorf("query row: %w", err)
 	}
 
-	name := strings.Join([]string{database, schema, db.table}, "\x00")
+	name := strings.Join([]string{database, schema, db.tableLockName}, "\x00")
 	sum := crc32.ChecksumIEEE([]byte(name))
 
 	sum *= uint32(lockID)

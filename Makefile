@@ -12,7 +12,7 @@ stop:
 	@$(COMPOSE) down
 
 test:
-	@go test -race -coverprofile=coverage.out ./...
+	@go test -race -coverprofile=coverage.out -count=1 ./...
 	@report=$$(go tool cover -func coverage.out); \
 	echo "$$report"; \
 	coverage=$$(printf "%s\n" "$$report" | awk '/^total:/ {gsub(/%/, "", $$3); print $$3}'); \

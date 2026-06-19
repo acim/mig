@@ -19,6 +19,10 @@ Custom migration table names must be simple PostgreSQL identifiers such as `sche
 
 This project is in an early stage so you can expect API breaking changes until the first major release.
 
+## Breaking changes in v0.3.0
+
+- Custom database adapters now implement `Migrate(context.Context, mig.Migrations) error` and own their migration orchestration, including locking, migration table setup, migration SQL execution, and version recording.
+
 ## Breaking changes in v0.2.0
 
 - Dropped built-in support for [pgx/v4](https://github.com/jackc/pgx/tree/v4).
@@ -58,6 +62,8 @@ or
 The Makefile uses `podman-compose` by default. Set `COMPOSE=docker-compose` if you want to run the same targets with Docker Compose.
 
 The local compose services bind to loopback only: PostgreSQL is available at `127.0.0.1:5432`, and Adminer is available at `http://127.0.0.1:8080`.
+
+Set `MIG_TEST_DSN` to point integration tests at a non-default PostgreSQL instance, for example `postgres://postgres@localhost:15432/mig`.
 
 ## License
 

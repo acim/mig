@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +23,43 @@ var (
 	_ pgxConn  = (*pgxpool.Conn)(nil)
 	_ Database = (*pgxDB)(nil)
 )
+
+func TestPgxLockIDUsesCanonicalTableName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		tableName string
+	}{
+		{
+			name:      "default",
+			tableName: "schema_migrations",
+		},
+		{
+			name:      "schema qualified",
+			tableName: "app.schema_migrations",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			const database = "mig"
+			const schema = "public"
+			db := newPgxDB(lockIdentityConn{database: database, schema: schema}, tt.tableName)
+
+			if err := db.setLockID(context.Background()); err != nil {
+				t.Fatalf("setLockID(): %v", err)
+			}
+
+			want := expectedPgxLockID(database, schema, tt.tableName)
+			if db.lockID != want {
+				t.Fatalf("lockID=%s; want lock ID hashed from canonical table name %s", db.lockID, want)
+			}
+		})
+	}
+}
 
 func TestPgxMigrateRollsBackMigrationWhenVersionRecordingFails(t *testing.T) {
 	if testing.Short() {
@@ -178,14 +217,24 @@ func TestPgxMigrateWrapsCreateTableError(t *testing.T) {
 	}
 
 	ctx := context.Background()
+	schemaName := testTableName(t, "missing_schema")
 	pool := pgxPool(ctx, t)
+	if _, err := pool.Exec(ctx, "DROP SCHEMA IF EXISTS "+schemaName+" CASCADE"); err != nil {
+		t.Fatalf("drop schema before test: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(ctx, "DROP SCHEMA IF EXISTS "+schemaName+" CASCADE"); err != nil {
+			t.Errorf("drop schema after test: %v", err)
+		}
+	})
+
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
 		t.Fatalf("acquire connection: %v", err)
 	}
 	defer conn.Release()
 
-	migrator := New(nil, newPgxDB(newPgxPoolConn(conn), "missing_schema.schema_migrations"))
+	migrator := New(nil, newPgxDB(newPgxPoolConn(conn), schemaName+".schema_migrations"))
 
 	err = migrator.Migrate(ctx)
 	if err == nil {
@@ -473,4 +522,34 @@ func tableExists(ctx context.Context, t *testing.T, pool *pgxpool.Pool, tableNam
 	}
 
 	return exists
+}
+
+type lockIdentityConn struct {
+	database string
+	schema   string
+}
+
+func (conn lockIdentityConn) QueryRow(context.Context, string, ...any) pgx.Row {
+	return lockIdentityRow(conn)
+}
+
+func (lockIdentityConn) Begin(context.Context) (pgx.Tx, error) {
+	return nil, errors.New("unexpected Begin call")
+}
+
+type lockIdentityRow lockIdentityConn
+
+func (row lockIdentityRow) Scan(dest ...any) error {
+	*(dest[0].(*string)) = row.database
+	*(dest[1].(*string)) = row.schema
+
+	return nil
+}
+
+func expectedPgxLockID(database, schema, tableName string) string {
+	name := strings.Join([]string{database, schema, tableName}, "\x00")
+	sum := crc32.ChecksumIEEE([]byte(name))
+	sum *= uint32(lockID)
+
+	return strconv.FormatUint(uint64(sum), 10)
 }

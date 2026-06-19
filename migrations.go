@@ -18,6 +18,8 @@ var (
 	ErrDuplicateVersion = errors.New("duplicate version")
 )
 
+const maxPostgresBigintVersion = uint64(1<<63 - 1)
+
 type Migrations []Migration
 
 func FromDir(path string) (Migrations, error) {
@@ -59,7 +61,7 @@ func migrations(fS fs.FS, files []fs.DirEntry, path string) (Migrations, error) 
 		}
 
 		version, err := strconv.ParseUint(id, 10, 64)
-		if err != nil || version == 0 {
+		if err != nil || version == 0 || version > maxPostgresBigintVersion {
 			return nil, fmt.Errorf("%w: %s", ErrInvalidVersion, filepath.Base(fileName))
 		}
 
@@ -113,7 +115,7 @@ type Migration struct {
 
 func (ms Migrations) Validate() error {
 	for _, m := range ms {
-		if m.Version == 0 {
+		if m.Version == 0 || m.Version > maxPostgresBigintVersion {
 			return fmt.Errorf("%w: %s", ErrInvalidVersion, m.Path)
 		}
 	}
