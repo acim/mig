@@ -149,6 +149,42 @@ func TestMigrateReturnsInvalidVersionErrorForPostgresBigintOverflow(t *testing.T
 	}
 }
 
+func TestFromPgxReturnsMigrator(t *testing.T) {
+	t.Parallel()
+
+	migrator := mig.FromPgx(mig.Migrations{}, nil, mig.WithCustomTable("custom_schema_migrations"))
+	if migrator == nil {
+		t.Fatal("FromPgx() migrator=<nil>; want migrator")
+	}
+}
+
+func TestFromPgxPoolWithAcquireConnectionTimeout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping long test")
+	}
+
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, testDSN())
+	if err != nil {
+		t.Fatalf("connect pool: %v", err)
+	}
+	defer pool.Close()
+
+	migrator, cleanup, err := mig.FromPgxPool(
+		mig.Migrations{},
+		pool,
+		mig.WithAcquireConnectionTimeout(time.Second),
+	)
+	if err != nil {
+		t.Fatalf("FromPgxPool(): %v", err)
+	}
+	defer cleanup()
+
+	if migrator == nil {
+		t.Fatal("FromPgxPool() migrator=<nil>; want migrator")
+	}
+}
+
 func (db *dbFake) Lock(context.Context) error {
 	db.l = true
 
