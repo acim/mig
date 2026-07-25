@@ -3,7 +3,7 @@
 [![pipeline](https://github.com/acim/mig/actions/workflows/pipeline.yaml/badge.svg)](https://github.com/acim/mig/actions/workflows/pipeline.yaml)
 [![Go Reference](https://pkg.go.dev/badge/go.acim.net/mig.svg)](https://pkg.go.dev/go.acim.net/mig)
 [![Go Report](https://goreportcard.com/badge/go.acim.net/mig)](https://goreportcard.com/report/go.acim.net/mig)
-![Go Coverage](https://img.shields.io/badge/coverage-96.8%25-brightgreen?style=flat&logo=go)
+![Go Coverage](https://img.shields.io/badge/coverage-96.9%25-brightgreen?style=flat&logo=go)
 
 Go PostgreSQL database schema migration library.
 
@@ -22,6 +22,12 @@ validated, non-empty migration set.
 ## Warning :construction:
 
 This project is in an early stage so you can expect API breaking changes until the first major release.
+
+## Breaking changes in v0.4.0
+
+- `Migrations.Validate` now rejects duplicate and out-of-order versions.
+  Previously tolerated unsorted manually constructed migration sets now fail
+  before database migration begins.
 
 ## Breaking changes in v0.3.0
 

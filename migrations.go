@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	ErrInvalidVersion    = errors.New("invalid migration version prefix")
+	ErrInvalidVersion    = errors.New("invalid migration version")
 	ErrDuplicateVersion  = errors.New("duplicate version")
 	ErrOutOfOrderVersion = errors.New("migration version out of order")
 	ErrNoMigrations      = errors.New("no migrations")
@@ -115,28 +115,31 @@ type Migration struct {
 	SQL     string
 }
 
-// Validate checks that migration versions are valid and strictly increasing.
+// Validate checks that migration versions are valid, unique, and strictly
+// increasing. An empty migration set is valid because migrating it is a no-op.
+// It returns ErrInvalidVersion, ErrDuplicateVersion, or ErrOutOfOrderVersion
+// when the corresponding invariant is violated.
 func (ms Migrations) Validate() error {
+	seen := make(map[uint64]struct{}, len(ms))
 	for i, m := range ms {
 		if m.Version == 0 || m.Version > maxPostgresBigintVersion {
-			return fmt.Errorf("%w: %s", ErrInvalidVersion, m.Path)
+			return fmt.Errorf("%w: %s", ErrInvalidVersion, describeMigration(i, m))
 		}
+		if _, ok := seen[m.Version]; ok {
+			return fmt.Errorf("%w: %d", ErrDuplicateVersion, m.Version)
+		}
+		seen[m.Version] = struct{}{}
 		if i == 0 {
 			continue
 		}
 
 		previous := ms[i-1]
-		if m.Version == previous.Version {
-			return fmt.Errorf("%w: %d", ErrDuplicateVersion, m.Version)
-		}
 		if m.Version < previous.Version {
 			return fmt.Errorf(
-				"%w: migration %d from %s follows migration %d from %s",
+				"%w: %s follows %s",
 				ErrOutOfOrderVersion,
-				m.Version,
-				m.Path,
-				previous.Version,
-				previous.Path,
+				describeMigration(i, m),
+				describeMigration(i-1, previous),
 			)
 		}
 	}
@@ -144,7 +147,18 @@ func (ms Migrations) Validate() error {
 	return nil
 }
 
-// TargetVersion returns the newest version in a valid, non-empty migration set.
+func describeMigration(index int, migration Migration) string {
+	description := fmt.Sprintf("migration at index %d", index)
+	if migration.Path != "" {
+		description += " from " + migration.Path
+	}
+
+	return fmt.Sprintf("%s with version %d", description, migration.Version)
+}
+
+// TargetVersion validates the migration set and returns its newest version. It
+// returns ErrNoMigrations if the set is empty, or an error from Validate if the
+// set is invalid.
 func (ms Migrations) TargetVersion() (uint64, error) {
 	if len(ms) == 0 {
 		return 0, ErrNoMigrations

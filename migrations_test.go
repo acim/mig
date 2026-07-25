@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"go.acim.net/mig"
@@ -191,6 +192,21 @@ func TestMigrationsValidateRejectsDuplicateVersion(t *testing.T) {
 	}
 }
 
+func TestMigrationsValidateRejectsNonAdjacentDuplicateVersion(t *testing.T) {
+	t.Parallel()
+
+	migrations := mig.Migrations{
+		{Version: 1, Path: "001-first.sql"},
+		{Version: 2, Path: "002-second.sql"},
+		{Version: 1, Path: "001-duplicate.sql"},
+	}
+
+	err := migrations.Validate()
+	if !errors.Is(err, mig.ErrDuplicateVersion) {
+		t.Fatalf("Validate() error=%v; want duplicate version error", err)
+	}
+}
+
 func TestMigrationsValidateRejectsOutOfOrderVersion(t *testing.T) {
 	t.Parallel()
 
@@ -205,6 +221,54 @@ func TestMigrationsValidateRejectsOutOfOrderVersion(t *testing.T) {
 	}
 }
 
+func TestMigrationsValidateAcceptsEmptySet(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name       string
+		migrations mig.Migrations
+	}{
+		{name: "nil", migrations: nil},
+		{name: "empty", migrations: mig.Migrations{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			if err := test.migrations.Validate(); err != nil {
+				t.Fatalf("Validate() error=%v; want nil", err)
+			}
+		})
+	}
+}
+
+func TestMigrationsValidateDescribesPathlessInvalidVersion(t *testing.T) {
+	t.Parallel()
+
+	err := (mig.Migrations{{Version: 0}}).Validate()
+	if !errors.Is(err, mig.ErrInvalidVersion) {
+		t.Fatalf("Validate() error=%v; want invalid version error", err)
+	}
+	for _, want := range []string{"migration at index 0", "version 0"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Validate() error=%q; want it to contain %q", err, want)
+		}
+	}
+}
+
+func TestMigrationsValidateDescribesPathlessOutOfOrderVersions(t *testing.T) {
+	t.Parallel()
+
+	err := (mig.Migrations{{Version: 2}, {Version: 1}}).Validate()
+	if !errors.Is(err, mig.ErrOutOfOrderVersion) {
+		t.Fatalf("Validate() error=%v; want out-of-order version error", err)
+	}
+	for _, want := range []string{"migration at index 1", "migration at index 0"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Validate() error=%q; want it to contain %q", err, want)
+		}
+	}
+}
+
 func TestMigrationsTargetVersion(t *testing.T) {
 	t.Parallel()
 
@@ -214,6 +278,18 @@ func TestMigrationsTargetVersion(t *testing.T) {
 	}
 
 	version, err := migrations.TargetVersion()
+	if err != nil {
+		t.Fatalf("TargetVersion() error=%v", err)
+	}
+	if version != 7 {
+		t.Fatalf("TargetVersion()=%d; want 7", version)
+	}
+}
+
+func TestMigrationsTargetVersionAcceptsSingleMigration(t *testing.T) {
+	t.Parallel()
+
+	version, err := (mig.Migrations{{Version: 7, Path: "007-only.sql"}}).TargetVersion()
 	if err != nil {
 		t.Fatalf("TargetVersion() error=%v", err)
 	}
