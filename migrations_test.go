@@ -177,6 +177,80 @@ func TestFromDirReturnsDuplicateVersionError(t *testing.T) {
 	}
 }
 
+func TestMigrationsValidateRejectsDuplicateVersion(t *testing.T) {
+	t.Parallel()
+
+	migrations := mig.Migrations{
+		{Version: 1, Path: "001-one.sql"},
+		{Version: 1, Path: "001-duplicate.sql"},
+	}
+
+	err := migrations.Validate()
+	if !errors.Is(err, mig.ErrDuplicateVersion) {
+		t.Fatalf("Validate() error=%v; want duplicate version error", err)
+	}
+}
+
+func TestMigrationsValidateRejectsOutOfOrderVersion(t *testing.T) {
+	t.Parallel()
+
+	migrations := mig.Migrations{
+		{Version: 2, Path: "002-second.sql"},
+		{Version: 1, Path: "001-first.sql"},
+	}
+
+	err := migrations.Validate()
+	if !errors.Is(err, mig.ErrOutOfOrderVersion) {
+		t.Fatalf("Validate() error=%v; want out-of-order version error", err)
+	}
+}
+
+func TestMigrationsTargetVersion(t *testing.T) {
+	t.Parallel()
+
+	migrations := mig.Migrations{
+		{Version: 2, Path: "002-second.sql"},
+		{Version: 7, Path: "007-seventh.sql"},
+	}
+
+	version, err := migrations.TargetVersion()
+	if err != nil {
+		t.Fatalf("TargetVersion() error=%v", err)
+	}
+	if version != 7 {
+		t.Fatalf("TargetVersion()=%d; want 7", version)
+	}
+}
+
+func TestMigrationsTargetVersionRejectsEmptySet(t *testing.T) {
+	t.Parallel()
+
+	version, err := (mig.Migrations{}).TargetVersion()
+	if !errors.Is(err, mig.ErrNoMigrations) {
+		t.Fatalf("TargetVersion() error=%v; want no migrations error", err)
+	}
+	if version != 0 {
+		t.Fatalf("TargetVersion()=%d; want 0", version)
+	}
+}
+
+func TestMigrationsTargetVersionRejectsInvalidSet(t *testing.T) {
+	t.Parallel()
+
+	migrations := mig.Migrations{
+		{Version: 2, Path: "002-second.sql"},
+		{Version: 1, Path: "001-first.sql"},
+	}
+
+	version, err := migrations.TargetVersion()
+	if !errors.Is(err, mig.ErrOutOfOrderVersion) {
+		t.Fatalf("TargetVersion() error=%v; want out-of-order version error", err)
+	}
+	if version != 0 {
+		t.Fatalf("TargetVersion()=%d; want 0", version)
+	}
+}
+
 func want() mig.Migrations {
 	return mig.Migrations{
 		{

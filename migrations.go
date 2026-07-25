@@ -14,8 +14,10 @@ import (
 )
 
 var (
-	ErrInvalidVersion   = errors.New("invalid migration version prefix")
-	ErrDuplicateVersion = errors.New("duplicate version")
+	ErrInvalidVersion    = errors.New("invalid migration version prefix")
+	ErrDuplicateVersion  = errors.New("duplicate version")
+	ErrOutOfOrderVersion = errors.New("migration version out of order")
+	ErrNoMigrations      = errors.New("no migrations")
 )
 
 const maxPostgresBigintVersion = uint64(1<<63 - 1)
@@ -113,14 +115,45 @@ type Migration struct {
 	SQL     string
 }
 
+// Validate checks that migration versions are valid and strictly increasing.
 func (ms Migrations) Validate() error {
-	for _, m := range ms {
+	for i, m := range ms {
 		if m.Version == 0 || m.Version > maxPostgresBigintVersion {
 			return fmt.Errorf("%w: %s", ErrInvalidVersion, m.Path)
+		}
+		if i == 0 {
+			continue
+		}
+
+		previous := ms[i-1]
+		if m.Version == previous.Version {
+			return fmt.Errorf("%w: %d", ErrDuplicateVersion, m.Version)
+		}
+		if m.Version < previous.Version {
+			return fmt.Errorf(
+				"%w: migration %d from %s follows migration %d from %s",
+				ErrOutOfOrderVersion,
+				m.Version,
+				m.Path,
+				previous.Version,
+				previous.Path,
+			)
 		}
 	}
 
 	return nil
+}
+
+// TargetVersion returns the newest version in a valid, non-empty migration set.
+func (ms Migrations) TargetVersion() (uint64, error) {
+	if len(ms) == 0 {
+		return 0, ErrNoMigrations
+	}
+	if err := ms.Validate(); err != nil {
+		return 0, err
+	}
+
+	return ms[len(ms)-1].Version, nil
 }
 
 func numberPrefix(s string) string {
