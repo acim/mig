@@ -59,7 +59,11 @@ func migrations(fS fs.FS, files []fs.DirEntry, path string) (Migrations, error) 
 		id := numberPrefix(filepath.Base(fileName))
 
 		if len(id) == 0 {
-			return nil, fmt.Errorf("%w: %s", ErrInvalidVersion, filepath.Base(fileName))
+			return nil, fmt.Errorf(
+				"%w: missing numeric prefix in %s",
+				ErrInvalidVersion,
+				filepath.Base(fileName),
+			)
 		}
 
 		version, err := strconv.ParseUint(id, 10, 64)
@@ -120,15 +124,20 @@ type Migration struct {
 // It returns ErrInvalidVersion, ErrDuplicateVersion, or ErrOutOfOrderVersion
 // when the corresponding invariant is violated.
 func (ms Migrations) Validate() error {
-	seen := make(map[uint64]struct{}, len(ms))
+	seen := make(map[uint64]int, len(ms))
 	for i, m := range ms {
 		if m.Version == 0 || m.Version > maxPostgresBigintVersion {
 			return fmt.Errorf("%w: %s", ErrInvalidVersion, describeMigration(i, m))
 		}
-		if _, ok := seen[m.Version]; ok {
-			return fmt.Errorf("%w: %d", ErrDuplicateVersion, m.Version)
+		if first, ok := seen[m.Version]; ok {
+			return fmt.Errorf(
+				"%w: %s duplicates %s",
+				ErrDuplicateVersion,
+				describeMigration(i, m),
+				describeMigration(first, ms[first]),
+			)
 		}
-		seen[m.Version] = struct{}{}
+		seen[m.Version] = i
 		if i == 0 {
 			continue
 		}

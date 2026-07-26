@@ -26,8 +26,13 @@ This project is in an early stage so you can expect API breaking changes until t
 ## Breaking changes in v0.4.0
 
 - `Migrations.Validate` now rejects duplicate and out-of-order versions.
-  Previously tolerated unsorted manually constructed migration sets now fail
-  before database migration begins.
+  Previously tolerated manually constructed migration sets with duplicate or
+  unsorted versions now fail before database migration begins. Remove duplicate
+  versions and sort the remaining set with `sort.Sort(&ms)` before passing it to
+  `mig`.
+- `ErrInvalidVersion` message text changed from
+  `invalid migration version prefix` to `invalid migration version`; match it
+  with `errors.Is`, not string comparison.
 
 ## Breaking changes in v0.3.0
 

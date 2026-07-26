@@ -86,6 +86,9 @@ func TestFromDirReturnsInvalidVersionError(t *testing.T) {
 	if !errors.Is(err, mig.ErrInvalidVersion) {
 		t.Fatalf("FromDir() error=%v; want invalid version error", err)
 	}
+	if want := "missing numeric prefix in broken.sql"; !strings.Contains(err.Error(), want) {
+		t.Fatalf("FromDir() error=%q; want it to contain %q", err, want)
+	}
 }
 
 func TestFromDirReturnsInvalidVersionErrorForZeroVersion(t *testing.T) {
@@ -205,6 +208,11 @@ func TestMigrationsValidateRejectsNonAdjacentDuplicateVersion(t *testing.T) {
 	if !errors.Is(err, mig.ErrDuplicateVersion) {
 		t.Fatalf("Validate() error=%v; want duplicate version error", err)
 	}
+	want := "duplicate version: migration at index 2 from 001-duplicate.sql with version 1 duplicates " +
+		"migration at index 0 from 001-first.sql with version 1"
+	if err.Error() != want {
+		t.Fatalf("Validate() error=%q; want %q", err, want)
+	}
 }
 
 func TestMigrationsValidateRejectsOutOfOrderVersion(t *testing.T) {
@@ -262,10 +270,10 @@ func TestMigrationsValidateDescribesPathlessOutOfOrderVersions(t *testing.T) {
 	if !errors.Is(err, mig.ErrOutOfOrderVersion) {
 		t.Fatalf("Validate() error=%v; want out-of-order version error", err)
 	}
-	for _, want := range []string{"migration at index 1", "migration at index 0"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("Validate() error=%q; want it to contain %q", err, want)
-		}
+	want := "migration version out of order: migration at index 1 with version 1 follows " +
+		"migration at index 0 with version 2"
+	if err.Error() != want {
+		t.Fatalf("Validate() error=%q; want %q", err, want)
 	}
 }
 

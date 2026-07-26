@@ -167,6 +167,25 @@ func TestMigrateRejectsOutOfOrderVersionsBeforeUsingDatabase(t *testing.T) {
 	}
 }
 
+func TestMigrateRejectsDuplicateVersionsBeforeUsingDatabase(t *testing.T) {
+	t.Parallel()
+
+	db := &dbFake{} //nolint:exhaustruct
+	m := mig.New(mig.Migrations{
+		{Version: 1, Path: "001-first.sql", SQL: "SELECT 1"},
+		{Version: 2, Path: "002-second.sql", SQL: "SELECT 2"},
+		{Version: 1, Path: "001-duplicate.sql", SQL: "SELECT 1"},
+	}, db)
+
+	err := m.Migrate(context.Background())
+	if !errors.Is(err, mig.ErrDuplicateVersion) {
+		t.Fatalf("Migrate() error=%v; want duplicate version error", err)
+	}
+	if db.migrateCalled {
+		t.Fatal("database Migrate called for duplicate migrations")
+	}
+}
+
 func TestFromPgxReturnsMigrator(t *testing.T) {
 	t.Parallel()
 
