@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"go.acim.net/mig"
@@ -85,6 +86,9 @@ func TestFromDirReturnsInvalidVersionError(t *testing.T) {
 	if !errors.Is(err, mig.ErrInvalidVersion) {
 		t.Fatalf("FromDir() error=%v; want invalid version error", err)
 	}
+	if want := "missing numeric prefix in broken.sql"; !strings.Contains(err.Error(), want) {
+		t.Fatalf("FromDir() error=%q; want it to contain %q", err, want)
+	}
 }
 
 func TestFromDirReturnsInvalidVersionErrorForZeroVersion(t *testing.T) {
@@ -103,6 +107,11 @@ func TestFromDirReturnsInvalidVersionErrorForZeroVersion(t *testing.T) {
 			if !errors.Is(err, mig.ErrInvalidVersion) {
 				t.Fatalf("FromDir() error=%v; want invalid version error", err)
 			}
+			want := mig.ErrInvalidVersion.Error() +
+				": version must be between 1 and 9223372036854775807 in " + name
+			if err.Error() != want {
+				t.Fatalf("FromDir() error=%q; want %q", err, want)
+			}
 		})
 	}
 }
@@ -120,6 +129,10 @@ func TestFromDirReturnsInvalidVersionErrorForOverflowingVersion(t *testing.T) {
 	if !errors.Is(err, mig.ErrInvalidVersion) {
 		t.Fatalf("FromDir() error=%v; want invalid version error", err)
 	}
+	want := mig.ErrInvalidVersion.Error() + ": unparseable version in " + name
+	if err.Error() != want {
+		t.Fatalf("FromDir() error=%q; want %q", err, want)
+	}
 }
 
 func TestFromDirReturnsInvalidVersionErrorForPostgresBigintOverflow(t *testing.T) {
@@ -134,6 +147,11 @@ func TestFromDirReturnsInvalidVersionErrorForPostgresBigintOverflow(t *testing.T
 	_, err := mig.FromDir(dir)
 	if !errors.Is(err, mig.ErrInvalidVersion) {
 		t.Fatalf("FromDir() error=%v; want invalid version error", err)
+	}
+	want := mig.ErrInvalidVersion.Error() +
+		": version must be between 1 and 9223372036854775807 in " + name
+	if err.Error() != want {
+		t.Fatalf("FromDir() error=%q; want %q", err, want)
 	}
 }
 
@@ -174,6 +192,166 @@ func TestFromDirReturnsDuplicateVersionError(t *testing.T) {
 	_, err := mig.FromDir(dir)
 	if !errors.Is(err, mig.ErrDuplicateVersion) {
 		t.Fatalf("FromDir() error=%v; want duplicate version error", err)
+	}
+	want := mig.ErrDuplicateVersion.Error() + ": 1-two.sql duplicates 001-one.sql"
+	if err.Error() != want {
+		t.Fatalf("FromDir() error=%q; want %q", err, want)
+	}
+}
+
+func TestMigrationsValidateRejectsDuplicateVersion(t *testing.T) {
+	t.Parallel()
+
+	migrations := mig.Migrations{
+		{Version: 1, Path: "001-one.sql"},
+		{Version: 1, Path: "001-duplicate.sql"},
+	}
+
+	err := migrations.Validate()
+	if !errors.Is(err, mig.ErrDuplicateVersion) {
+		t.Fatalf("Validate() error=%v; want duplicate version error", err)
+	}
+}
+
+func TestMigrationsValidateRejectsNonAdjacentDuplicateVersion(t *testing.T) {
+	t.Parallel()
+
+	migrations := mig.Migrations{
+		{Version: 1, Path: "001-first.sql"},
+		{Version: 2, Path: "002-second.sql"},
+		{Version: 1, Path: "001-duplicate.sql"},
+	}
+
+	err := migrations.Validate()
+	if !errors.Is(err, mig.ErrDuplicateVersion) {
+		t.Fatalf("Validate() error=%v; want duplicate version error", err)
+	}
+	want := mig.ErrDuplicateVersion.Error() +
+		": migration at index 2 from 001-duplicate.sql with version 1 duplicates " +
+		"migration at index 0 from 001-first.sql with version 1"
+	if err.Error() != want {
+		t.Fatalf("Validate() error=%q; want %q", err, want)
+	}
+}
+
+func TestMigrationsValidateRejectsOutOfOrderVersion(t *testing.T) {
+	t.Parallel()
+
+	migrations := mig.Migrations{
+		{Version: 2, Path: "002-second.sql"},
+		{Version: 1, Path: "001-first.sql"},
+	}
+
+	err := migrations.Validate()
+	if !errors.Is(err, mig.ErrOutOfOrderVersion) {
+		t.Fatalf("Validate() error=%v; want out-of-order version error", err)
+	}
+}
+
+func TestMigrationsValidateAcceptsEmptySet(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name       string
+		migrations mig.Migrations
+	}{
+		{name: "nil", migrations: nil},
+		{name: "empty", migrations: mig.Migrations{}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			if err := test.migrations.Validate(); err != nil {
+				t.Fatalf("Validate() error=%v; want nil", err)
+			}
+		})
+	}
+}
+
+func TestMigrationsValidateDescribesPathlessInvalidVersion(t *testing.T) {
+	t.Parallel()
+
+	err := (mig.Migrations{{Version: 0}}).Validate()
+	if !errors.Is(err, mig.ErrInvalidVersion) {
+		t.Fatalf("Validate() error=%v; want invalid version error", err)
+	}
+	for _, want := range []string{"migration at index 0", "version 0"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Validate() error=%q; want it to contain %q", err, want)
+		}
+	}
+}
+
+func TestMigrationsValidateDescribesPathlessOutOfOrderVersions(t *testing.T) {
+	t.Parallel()
+
+	err := (mig.Migrations{{Version: 2}, {Version: 1}}).Validate()
+	if !errors.Is(err, mig.ErrOutOfOrderVersion) {
+		t.Fatalf("Validate() error=%v; want out-of-order version error", err)
+	}
+	want := mig.ErrOutOfOrderVersion.Error() +
+		": migration at index 1 with version 1 follows " +
+		"migration at index 0 with version 2"
+	if err.Error() != want {
+		t.Fatalf("Validate() error=%q; want %q", err, want)
+	}
+}
+
+func TestMigrationsTargetVersion(t *testing.T) {
+	t.Parallel()
+
+	migrations := mig.Migrations{
+		{Version: 2, Path: "002-second.sql"},
+		{Version: 7, Path: "007-seventh.sql"},
+	}
+
+	version, err := migrations.TargetVersion()
+	if err != nil {
+		t.Fatalf("TargetVersion() error=%v", err)
+	}
+	if version != 7 {
+		t.Fatalf("TargetVersion()=%d; want 7", version)
+	}
+}
+
+func TestMigrationsTargetVersionAcceptsSingleMigration(t *testing.T) {
+	t.Parallel()
+
+	version, err := (mig.Migrations{{Version: 7, Path: "007-only.sql"}}).TargetVersion()
+	if err != nil {
+		t.Fatalf("TargetVersion() error=%v", err)
+	}
+	if version != 7 {
+		t.Fatalf("TargetVersion()=%d; want 7", version)
+	}
+}
+
+func TestMigrationsTargetVersionRejectsEmptySet(t *testing.T) {
+	t.Parallel()
+
+	version, err := (mig.Migrations{}).TargetVersion()
+	if !errors.Is(err, mig.ErrNoMigrations) {
+		t.Fatalf("TargetVersion() error=%v; want no migrations error", err)
+	}
+	if version != 0 {
+		t.Fatalf("TargetVersion()=%d; want 0", version)
+	}
+}
+
+func TestMigrationsTargetVersionRejectsInvalidSet(t *testing.T) {
+	t.Parallel()
+
+	migrations := mig.Migrations{
+		{Version: 2, Path: "002-second.sql"},
+		{Version: 1, Path: "001-first.sql"},
+	}
+
+	version, err := migrations.TargetVersion()
+	if !errors.Is(err, mig.ErrOutOfOrderVersion) {
+		t.Fatalf("TargetVersion() error=%v; want out-of-order version error", err)
+	}
+	if version != 0 {
+		t.Fatalf("TargetVersion()=%d; want 0", version)
 	}
 }
 

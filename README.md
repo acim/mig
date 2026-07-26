@@ -3,7 +3,7 @@
 [![pipeline](https://github.com/acim/mig/actions/workflows/pipeline.yaml/badge.svg)](https://github.com/acim/mig/actions/workflows/pipeline.yaml)
 [![Go Reference](https://pkg.go.dev/badge/go.acim.net/mig.svg)](https://pkg.go.dev/go.acim.net/mig)
 [![Go Report](https://goreportcard.com/badge/go.acim.net/mig)](https://goreportcard.com/report/go.acim.net/mig)
-![Go Coverage](https://img.shields.io/badge/coverage-96.5%25-brightgreen?style=flat&logo=go)
+![Go Coverage](https://img.shields.io/badge/coverage-97.0%25-brightgreen?style=flat&logo=go)
 
 Go PostgreSQL database schema migration library.
 
@@ -15,9 +15,24 @@ In theory, you can also make an implementation for any database using _mig.Datab
 
 Custom migration table names must be simple PostgreSQL identifiers such as `schema_migrations` or schema-qualified identifiers such as `app.schema_migrations`. Each identifier part must start with a letter or underscore and contain only letters, digits, and underscores.
 
+`Migrations.Validate` rejects invalid, duplicate, and out-of-order versions. Use
+`Migrations.TargetVersion` when a caller needs the newest version from a
+validated, non-empty migration set.
+
 ## Warning :construction:
 
 This project is in an early stage so you can expect API breaking changes until the first major release.
+
+## Breaking changes in v0.4.0
+
+- `Migrations.Validate` now rejects duplicate and out-of-order versions.
+  Previously tolerated manually constructed migration sets with duplicate or
+  unsorted versions now fail before database migration begins. Remove duplicate
+  versions and sort the remaining set with `sort.Sort(&ms)` before passing it to
+  `mig`.
+- `ErrInvalidVersion` message text changed from
+  `invalid migration version prefix` to `invalid migration version`; match it
+  with `errors.Is`, not string comparison.
 
 ## Breaking changes in v0.3.0
 

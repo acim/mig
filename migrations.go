@@ -14,8 +14,10 @@ import (
 )
 
 var (
-	ErrInvalidVersion   = errors.New("invalid migration version prefix")
-	ErrDuplicateVersion = errors.New("duplicate version")
+	ErrInvalidVersion    = errors.New("invalid migration version")
+	ErrDuplicateVersion  = errors.New("duplicate version")
+	ErrOutOfOrderVersion = errors.New("migration version out of order")
+	ErrNoMigrations      = errors.New("no migrations")
 )
 
 const maxPostgresBigintVersion = uint64(1<<63 - 1)
@@ -43,7 +45,7 @@ func FromEmbedFS(fs embed.FS, path string) (Migrations, error) {
 }
 
 func migrations(fS fs.FS, files []fs.DirEntry, path string) (Migrations, error) {
-	seen := make(map[uint64]bool, len(files))
+	seen := make(map[uint64]string, len(files))
 	ms := make(Migrations, 0, len(files))
 
 	for _, file := range files {
@@ -57,16 +59,33 @@ func migrations(fS fs.FS, files []fs.DirEntry, path string) (Migrations, error) 
 		id := numberPrefix(filepath.Base(fileName))
 
 		if len(id) == 0 {
-			return nil, fmt.Errorf("%w: %s", ErrInvalidVersion, filepath.Base(fileName))
+			return nil, fmt.Errorf(
+				"%w: missing numeric prefix in %s",
+				ErrInvalidVersion,
+				filepath.Base(fileName),
+			)
 		}
 
 		version, err := strconv.ParseUint(id, 10, 64)
-		if err != nil || version == 0 || version > maxPostgresBigintVersion {
-			return nil, fmt.Errorf("%w: %s", ErrInvalidVersion, filepath.Base(fileName))
+		if err != nil {
+			return nil, fmt.Errorf("%w: unparseable version in %s", ErrInvalidVersion, fileName)
+		}
+		if version == 0 || version > maxPostgresBigintVersion {
+			return nil, fmt.Errorf(
+				"%w: version must be between 1 and %d in %s",
+				ErrInvalidVersion,
+				maxPostgresBigintVersion,
+				fileName,
+			)
 		}
 
-		if seen[version] {
-			return nil, fmt.Errorf("%w: %d", ErrDuplicateVersion, version)
+		if first, ok := seen[version]; ok {
+			return nil, fmt.Errorf(
+				"%w: %s duplicates %s",
+				ErrDuplicateVersion,
+				fileName,
+				first,
+			)
 		}
 
 		name := strings.TrimPrefix(fileName, id)
@@ -86,7 +105,7 @@ func migrations(fS fs.FS, files []fs.DirEntry, path string) (Migrations, error) 
 			SQL:     string(sql),
 		})
 
-		seen[version] = true
+		seen[version] = fileName
 	}
 
 	sort.Sort(&ms)
@@ -113,14 +132,64 @@ type Migration struct {
 	SQL     string
 }
 
+// Validate checks that migration versions are valid, unique, and strictly
+// increasing. An empty migration set is valid because migrating it is a no-op.
+// It returns ErrInvalidVersion, ErrDuplicateVersion, or ErrOutOfOrderVersion
+// when the corresponding invariant is violated.
 func (ms Migrations) Validate() error {
-	for _, m := range ms {
+	seen := make(map[uint64]int, len(ms))
+	for i, m := range ms {
 		if m.Version == 0 || m.Version > maxPostgresBigintVersion {
-			return fmt.Errorf("%w: %s", ErrInvalidVersion, m.Path)
+			return fmt.Errorf("%w: %s", ErrInvalidVersion, describeMigration(i, m))
+		}
+		if first, ok := seen[m.Version]; ok {
+			return fmt.Errorf(
+				"%w: %s duplicates %s",
+				ErrDuplicateVersion,
+				describeMigration(i, m),
+				describeMigration(first, ms[first]),
+			)
+		}
+		seen[m.Version] = i
+		if i == 0 {
+			continue
+		}
+
+		previous := ms[i-1]
+		if m.Version < previous.Version {
+			return fmt.Errorf(
+				"%w: %s follows %s",
+				ErrOutOfOrderVersion,
+				describeMigration(i, m),
+				describeMigration(i-1, previous),
+			)
 		}
 	}
 
 	return nil
+}
+
+func describeMigration(index int, migration Migration) string {
+	description := fmt.Sprintf("migration at index %d", index)
+	if migration.Path != "" {
+		description += " from " + migration.Path
+	}
+
+	return fmt.Sprintf("%s with version %d", description, migration.Version)
+}
+
+// TargetVersion validates the migration set and returns its newest version. It
+// returns ErrNoMigrations if the set is empty, or an error from Validate if the
+// set is invalid.
+func (ms Migrations) TargetVersion() (uint64, error) {
+	if len(ms) == 0 {
+		return 0, ErrNoMigrations
+	}
+	if err := ms.Validate(); err != nil {
+		return 0, err
+	}
+
+	return ms[len(ms)-1].Version, nil
 }
 
 func numberPrefix(s string) string {
