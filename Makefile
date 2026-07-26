@@ -1,6 +1,6 @@
 .PHONY: lint start stop test update
 
-COMPOSE ?= podman-compose
+COMPOSE ?= podman compose
 
 lint:
 	@golangci-lint run

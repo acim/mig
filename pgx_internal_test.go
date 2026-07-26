@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"hash/crc32"
 	"os"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -24,40 +22,98 @@ var (
 	_ Database = (*pgxDB)(nil)
 )
 
-func TestPgxLockIDUsesCanonicalTableName(t *testing.T) {
+func TestPgxLockIDUsesCanonicalLedgerIdentity(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name      string
-		tableName string
-	}{
-		{
-			name:      "default",
-			tableName: "schema_migrations",
-		},
-		{
-			name:      "schema qualified",
-			tableName: "app.schema_migrations",
-		},
+	unqualified := newPgxDB(lockIdentityConn{database: "mig", schema: "app"}, "schema_migrations")
+	qualified := newPgxDB(lockIdentityConn{database: "mig", schema: "public"}, "app.schema_migrations")
+
+	for _, db := range []*pgxDB{unqualified, qualified} {
+		if err := db.setLockID(context.Background()); err != nil {
+			t.Fatalf("setLockID(): %v", err)
+		}
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+	if unqualified.table != qualified.table {
+		t.Fatalf("canonical tables differ: unqualified=%s qualified=%s", unqualified.table, qualified.table)
+	}
+	if unqualified.lockID != qualified.lockID {
+		t.Fatalf("lock IDs differ for the same ledger: unqualified=%v qualified=%v", unqualified.lockID, qualified.lockID)
+	}
+}
 
-			const database = "mig"
-			const schema = "public"
-			db := newPgxDB(lockIdentityConn{database: database, schema: schema}, tt.tableName)
+func TestPgxMigrateSerializesQualifiedAndUnqualifiedLedgerAliases(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping long test")
+	}
 
-			if err := db.setLockID(context.Background()); err != nil {
-				t.Fatalf("setLockID(): %v", err)
-			}
+	ctx := context.Background()
+	schemaName := testTableName(t, "ledger_schema")
+	ledgerName := "schema_migrations"
+	sideEffectTable := schemaName + ".migration_side_effect"
+	pool := pgxPool(ctx, t)
+	if _, err := pool.Exec(ctx, "DROP SCHEMA IF EXISTS "+schemaName+" CASCADE"); err != nil {
+		t.Fatalf("drop schema before test: %v", err)
+	}
+	if _, err := pool.Exec(ctx, "CREATE SCHEMA "+schemaName); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(ctx, "DROP SCHEMA IF EXISTS "+schemaName+" CASCADE"); err != nil {
+			t.Errorf("drop schema after test: %v", err)
+		}
+	})
 
-			want := expectedPgxLockID(database, schema, tt.tableName)
-			if db.lockID != want {
-				t.Fatalf("lockID=%s; want lock ID hashed from canonical table name %s", db.lockID, want)
-			}
-		})
+	unqualifiedConn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire unqualified connection: %v", err)
+	}
+	defer unqualifiedConn.Release()
+	if _, err := unqualifiedConn.Exec(ctx, "SET search_path TO "+schemaName+", public"); err != nil {
+		t.Fatalf("set unqualified search path: %v", err)
+	}
+
+	qualifiedConn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire qualified connection: %v", err)
+	}
+	defer qualifiedConn.Release()
+	if _, err := qualifiedConn.Exec(ctx, "SET search_path TO public, "+schemaName); err != nil {
+		t.Fatalf("set qualified search path: %v", err)
+	}
+
+	migrations := Migrations{{
+		Version: 1,
+		Path:    "001-concurrent.sql",
+		SQL:     "SELECT pg_sleep(0.2); CREATE TABLE " + sideEffectTable + " (id integer)",
+	}}
+	migrators := []*Mig{
+		New(migrations, newPgxDB(newPgxPoolConn(unqualifiedConn), ledgerName)),
+		New(migrations, newPgxDB(newPgxPoolConn(qualifiedConn), schemaName+"."+ledgerName)),
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, len(migrators))
+	for _, migrator := range migrators {
+		go func() {
+			<-start
+			errs <- migrator.Migrate(ctx)
+		}()
+	}
+	close(start)
+
+	for range migrators {
+		if err := <-errs; err != nil {
+			t.Fatalf("concurrent Migrate(): %v", err)
+		}
+	}
+
+	var versionCount int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM "+schemaName+"."+ledgerName).Scan(&versionCount); err != nil {
+		t.Fatalf("count ledger versions: %v", err)
+	}
+	if versionCount != 1 {
+		t.Fatalf("ledger version count=%d; want 1", versionCount)
 	}
 }
 
@@ -122,6 +178,145 @@ func TestPgxMigrateRollsBackMigrationWhenVersionRecordingFails(t *testing.T) {
 
 	if !tableExists(ctx, t, pool, tableName) {
 		t.Fatalf("migration table %s does not exist; want rollback to restore it", tableName)
+	}
+}
+
+func TestPgxMigrateRejectsTransactionControlStatementsWithoutRecordingVersion(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping long test")
+	}
+
+	tests := []struct {
+		name string
+		sql  string
+	}{
+		{name: "rollback", sql: "ROLLBACK"},
+		{name: "commit", sql: "COMMIT"},
+		{name: "end", sql: "END TRANSACTION"},
+		{name: "abort", sql: "ABORT"},
+		{name: "begin", sql: "BEGIN"},
+		{name: "start transaction", sql: "START TRANSACTION"},
+		{name: "savepoint", sql: "SAVEPOINT nested"},
+		{name: "release savepoint", sql: "RELEASE SAVEPOINT nested"},
+		{name: "prepare transaction", sql: "PREPARE TRANSACTION 'migration'"},
+		{name: "set transaction", sql: "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE"},
+		{name: "after another statement", sql: "SELECT 1; ROLLBACK"},
+		{name: "after comments", sql: "-- migration setup\n/* nested /* comment */ comment */ COMMIT"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			tableName := testTableName(t, "transaction_control")
+			pool := pgxPool(ctx, t)
+			dropTable(ctx, t, pool, tableName)
+			t.Cleanup(func() {
+				dropTable(ctx, t, pool, tableName)
+			})
+
+			conn, err := pool.Acquire(ctx)
+			if err != nil {
+				t.Fatalf("acquire connection: %v", err)
+			}
+			defer conn.Release()
+
+			migrator := New(Migrations{{
+				Version: 1,
+				Path:    "001-transaction-control.sql",
+				SQL:     tt.sql,
+			}}, newPgxDB(newPgxPoolConn(conn), tableName))
+
+			err = migrator.Migrate(ctx)
+			if !errors.Is(err, ErrTransactionControl) {
+				t.Fatalf("Migrate() error=%v; want transaction control error", err)
+			}
+
+			if tableExists(ctx, t, pool, tableName) {
+				var count int
+				if err := pool.QueryRow(ctx, "SELECT count(*) FROM "+tableName).Scan(&count); err != nil {
+					t.Fatalf("count migration versions: %v", err)
+				}
+				if count != 0 {
+					t.Fatalf("migration version count=%d; want 0", count)
+				}
+			}
+		})
+	}
+}
+
+func TestPgxMigrateAllowsTransactionKeywordsInCommentsAndQuotedText(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping long test")
+	}
+
+	ctx := context.Background()
+	tableName := testTableName(t, "quoted_transaction_words")
+	pool := pgxPool(ctx, t)
+	dropTable(ctx, t, pool, tableName)
+	t.Cleanup(func() {
+		dropTable(ctx, t, pool, tableName)
+	})
+
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire connection: %v", err)
+	}
+	defer conn.Release()
+
+	migrator := New(Migrations{{
+		Version: 1,
+		Path:    "001-quoted-transaction-words.sql",
+		SQL: `
+			-- ROLLBACK;
+			/* COMMIT; */
+			SELECT 'BEGIN; END', $$ABORT; START TRANSACTION$$;
+		`,
+	}}, newPgxDB(newPgxPoolConn(conn), tableName))
+
+	if err := migrator.Migrate(ctx); err != nil {
+		t.Fatalf("Migrate(): %v", err)
+	}
+
+	var version uint64
+	if err := pool.QueryRow(ctx, "SELECT version FROM "+tableName).Scan(&version); err != nil {
+		t.Fatalf("read migration version: %v", err)
+	}
+	if version != 1 {
+		t.Fatalf("migration version=%d; want 1", version)
+	}
+}
+
+func TestContainsTransactionControlDistinguishesTopLevelCommandsFromQuotedText(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		sql  string
+		want bool
+	}{
+		{name: "set session transaction", sql: "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY", want: true},
+		{name: "lowercase rollback", sql: "select 1; rollback", want: true},
+		{name: "parameter before command", sql: "SELECT $1; COMMIT", want: true},
+		{name: "prepared statement", sql: "PREPARE query AS SELECT 1", want: false},
+		{name: "start expression", sql: "SELECT 'START TRANSACTION'", want: false},
+		{name: "escaped quote", sql: `SELECT E'ROLLBACK\'; COMMIT'`, want: false},
+		{name: "backslash in standard string", sql: `SELECT 'ROLLBACK\'; COMMIT`, want: true},
+		{name: "doubled single quote", sql: "SELECT 'COMMIT''ROLLBACK'", want: false},
+		{name: "doubled identifier quote", sql: `SELECT "COMMIT""ROLLBACK"`, want: false},
+		{name: "tagged dollar quote", sql: "DO $body$ BEGIN RAISE NOTICE 'COMMIT'; END $body$", want: false},
+		{name: "unterminated dollar quote", sql: "SELECT $body$ ROLLBACK", want: false},
+		{name: "unterminated quoted text", sql: "SELECT 'ROLLBACK", want: false},
+		{name: "empty SQL", sql: "", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := containsTransactionControl(tt.sql); got != tt.want {
+				t.Fatalf("containsTransactionControl(%q)=%t; want %t", tt.sql, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -559,12 +754,4 @@ func (row lockIdentityRow) Scan(dest ...any) error {
 	*(dest[1].(*string)) = row.schema
 
 	return nil
-}
-
-func expectedPgxLockID(database, schema, tableName string) string {
-	name := strings.Join([]string{database, schema, tableName}, "\x00")
-	sum := crc32.ChecksumIEEE([]byte(name))
-	sum *= uint32(lockID)
-
-	return strconv.FormatUint(uint64(sum), 10)
 }

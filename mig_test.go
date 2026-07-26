@@ -110,6 +110,8 @@ func TestMigrateReturnsInvalidTableNameError(t *testing.T) {
 		"schema_migrations; DROP TABLE users",
 		"one.two.three",
 		"1schema_migrations",
+		strings.Repeat("a", 64),
+		"public." + strings.Repeat("a", 64),
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -189,9 +191,78 @@ func TestMigrateRejectsDuplicateVersionsBeforeUsingDatabase(t *testing.T) {
 func TestFromPgxReturnsMigrator(t *testing.T) {
 	t.Parallel()
 
-	migrator := mig.FromPgx(mig.Migrations{}, nil, mig.WithCustomTable("custom_schema_migrations"))
+	migrator := mig.FromPgx(mig.Migrations{}, new(pgx.Conn), mig.WithCustomTable("custom_schema_migrations"))
 	if migrator == nil {
 		t.Fatal("FromPgx() migrator=<nil>; want migrator")
+	}
+}
+
+func TestConstructorsRejectNilDatabaseDependencies(t *testing.T) {
+	t.Parallel()
+
+	t.Run("New", func(t *testing.T) {
+		t.Parallel()
+
+		migrator := mig.New(nil, nil)
+		if err := migrator.Migrate(context.Background()); !errors.Is(err, mig.ErrNilDatabase) {
+			t.Fatalf("Migrate() error=%v; want nil database error", err)
+		}
+	})
+
+	t.Run("FromPgxPool", func(t *testing.T) {
+		t.Parallel()
+
+		migrator, cleanup, err := mig.FromPgxPool(nil, nil)
+		if !errors.Is(err, mig.ErrNilDatabase) {
+			t.Fatalf("FromPgxPool() error=%v; want nil database error", err)
+		}
+		if migrator != nil {
+			t.Fatalf("FromPgxPool() migrator=%v; want nil", migrator)
+		}
+		if cleanup != nil {
+			t.Fatal("FromPgxPool() cleanup is not nil")
+		}
+	})
+
+	t.Run("FromPgx", func(t *testing.T) {
+		t.Parallel()
+
+		migrator := mig.FromPgx(nil, nil)
+		if err := migrator.Migrate(context.Background()); !errors.Is(err, mig.ErrNilDatabase) {
+			t.Fatalf("Migrate() error=%v; want nil database error", err)
+		}
+	})
+}
+
+func TestAcquireConnectionTimeoutIsRejectedOutsideFromPgxPool(t *testing.T) {
+	t.Parallel()
+
+	for _, timeout := range []time.Duration{0, time.Second} {
+		t.Run(timeout.String(), func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("New", func(t *testing.T) {
+				t.Parallel()
+
+				db := &dbFake{} //nolint:exhaustruct
+				migrator := mig.New(nil, db, mig.WithAcquireConnectionTimeout(timeout))
+				if err := migrator.Migrate(context.Background()); !errors.Is(err, mig.ErrUnsupportedOption) {
+					t.Fatalf("Migrate() error=%v; want unsupported option error", err)
+				}
+				if db.migrateCalled {
+					t.Fatal("database Migrate called with unsupported option")
+				}
+			})
+
+			t.Run("FromPgx", func(t *testing.T) {
+				t.Parallel()
+
+				migrator := mig.FromPgx(nil, new(pgx.Conn), mig.WithAcquireConnectionTimeout(timeout))
+				if err := migrator.Migrate(context.Background()); !errors.Is(err, mig.ErrUnsupportedOption) {
+					t.Fatalf("Migrate() error=%v; want unsupported option error", err)
+				}
+			})
+		})
 	}
 }
 

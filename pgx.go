@@ -4,8 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"hash/crc32"
-	"strconv"
+	"hash/fnv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -13,7 +12,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const lockID = 2854263694
+var (
+	ErrTransactionControl  = errors.New("migration SQL contains transaction control statement")
+	ErrTransactionInactive = errors.New("migration transaction is not active")
+)
 
 type pgxConn interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
@@ -28,7 +30,7 @@ type pgxExecutor interface {
 type pgxDB struct {
 	table         string
 	tableLockName string
-	lockID        string
+	lockID        int64
 	conn          pgxConn
 }
 
@@ -117,13 +119,25 @@ func (db *pgxDB) Migrate(ctx context.Context, ms Migrations) (err error) {
 			continue
 		}
 
+		if containsTransactionControl(m.SQL) {
+			return fmt.Errorf("run migration %d from file %s: %w", m.Version, m.Path, ErrTransactionControl)
+		}
+
 		if _, err := tx.Exec(ctx, m.SQL); err != nil {
 			return fmt.Errorf("run migration %d from file %s: execute migration SQL: %w", m.Version, m.Path, err)
+		}
+
+		if tx.Conn() == nil || tx.Conn().PgConn().TxStatus() != 'T' {
+			return fmt.Errorf("run migration %d from file %s: %w", m.Version, m.Path, ErrTransactionInactive)
 		}
 
 		if err := db.setLastVersion(ctx, tx, m.Version); err != nil {
 			return fmt.Errorf("set last version %d: %w", m.Version, err)
 		}
+	}
+
+	if tx.Conn() == nil || tx.Conn().PgConn().TxStatus() != 'T' {
+		return ErrTransactionInactive
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -136,6 +150,138 @@ func (db *pgxDB) Migrate(ctx context.Context, ms Migrations) (err error) {
 	return nil
 }
 
+func containsTransactionControl(sql string) bool {
+	statementWords := make([]string, 0, 5)
+
+	for i := 0; i < len(sql); {
+		switch {
+		case sql[i] == ';':
+			if transactionControlWords(statementWords) {
+				return true
+			}
+			statementWords = statementWords[:0]
+			i++
+		case sql[i] == '-' && i+1 < len(sql) && sql[i+1] == '-':
+			i += 2
+			for i < len(sql) && sql[i] != '\n' {
+				i++
+			}
+		case sql[i] == '/' && i+1 < len(sql) && sql[i+1] == '*':
+			i = skipBlockComment(sql, i+2)
+		case sql[i] == '\'' || sql[i] == '"':
+			i = skipQuotedSQL(sql, i, sql[i], hasEscapeStringPrefix(sql, i))
+		case sql[i] == '$':
+			if end := dollarQuoteEnd(sql, i); end > i {
+				i = end
+			} else {
+				i++
+			}
+		case isSQLWordByte(sql[i]):
+			start := i
+			for i < len(sql) && isSQLWordByte(sql[i]) {
+				i++
+			}
+			if len(statementWords) < cap(statementWords) {
+				statementWords = append(statementWords, strings.ToUpper(sql[start:i]))
+			}
+		default:
+			i++
+		}
+	}
+
+	return transactionControlWords(statementWords)
+}
+
+func transactionControlWords(words []string) bool {
+	if len(words) == 0 {
+		return false
+	}
+
+	switch words[0] {
+	case "ABORT", "BEGIN", "COMMIT", "END", "RELEASE", "ROLLBACK", "SAVEPOINT":
+		return true
+	case "PREPARE", "START":
+		return len(words) > 1 && words[1] == "TRANSACTION"
+	case "SET":
+		return len(words) > 1 && (words[1] == "TRANSACTION" ||
+			(len(words) > 4 && words[1] == "SESSION" && words[2] == "CHARACTERISTICS" &&
+				words[3] == "AS" && words[4] == "TRANSACTION"))
+	default:
+		return false
+	}
+}
+
+func skipBlockComment(sql string, i int) int {
+	depth := 1
+	for i < len(sql) && depth > 0 {
+		switch {
+		case i+1 < len(sql) && sql[i] == '/' && sql[i+1] == '*':
+			depth++
+			i += 2
+		case i+1 < len(sql) && sql[i] == '*' && sql[i+1] == '/':
+			depth--
+			i += 2
+		default:
+			i++
+		}
+	}
+
+	return i
+}
+
+func skipQuotedSQL(sql string, i int, quote byte, backslashEscapes bool) int {
+	for i++; i < len(sql); i++ {
+		if sql[i] == '\\' && backslashEscapes && i+1 < len(sql) {
+			i++
+			continue
+		}
+		if sql[i] != quote {
+			continue
+		}
+		if i+1 < len(sql) && sql[i+1] == quote {
+			i++
+			continue
+		}
+
+		return i + 1
+	}
+
+	return len(sql)
+}
+
+func hasEscapeStringPrefix(sql string, quoteIndex int) bool {
+	if sql[quoteIndex] != '\'' || quoteIndex == 0 || sql[quoteIndex-1] != 'E' && sql[quoteIndex-1] != 'e' {
+		return false
+	}
+
+	return quoteIndex == 1 || !isSQLWordByte(sql[quoteIndex-2])
+}
+
+func dollarQuoteEnd(sql string, start int) int {
+	tagEnd := start + 1
+	for tagEnd < len(sql) && isDollarTagByte(sql[tagEnd]) {
+		tagEnd++
+	}
+	if tagEnd >= len(sql) || sql[tagEnd] != '$' {
+		return start
+	}
+
+	tag := sql[start : tagEnd+1]
+	if end := strings.Index(sql[tagEnd+1:], tag); end >= 0 {
+		return tagEnd + 1 + end + len(tag)
+	}
+
+	return len(sql)
+}
+
+func isSQLWordByte(char byte) bool {
+	return char >= 'A' && char <= 'Z' || char >= 'a' && char <= 'z' || char >= '0' && char <= '9' || char == '_'
+}
+
+func isDollarTagByte(char byte) bool {
+	return isSQLWordByte(char)
+}
+
 func (db *pgxDB) setLockID(ctx context.Context) error {
 	q := "SELECT CURRENT_DATABASE(), CURRENT_SCHEMA()"
 
@@ -145,12 +291,18 @@ func (db *pgxDB) setLockID(ctx context.Context) error {
 		return fmt.Errorf("query row: %w", err)
 	}
 
-	name := strings.Join([]string{database, schema, db.tableLockName}, "\x00")
-	sum := crc32.ChecksumIEEE([]byte(name))
+	tableParts := strings.Split(db.tableLockName, ".")
+	relation := tableParts[len(tableParts)-1]
+	if len(tableParts) == 2 {
+		schema = tableParts[0]
+	}
 
-	sum *= uint32(lockID)
+	db.table = pgx.Identifier{schema, relation}.Sanitize()
+	identity := strings.Join([]string{database, schema, relation}, "\x00")
+	hash := fnv.New64a()
+	_, _ = hash.Write([]byte(identity))
 
-	db.lockID = strconv.FormatUint(uint64(sum), 10)
+	db.lockID = int64(hash.Sum64())
 
 	return nil
 }

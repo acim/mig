@@ -3,7 +3,7 @@
 [![pipeline](https://github.com/acim/mig/actions/workflows/pipeline.yaml/badge.svg)](https://github.com/acim/mig/actions/workflows/pipeline.yaml)
 [![Go Reference](https://pkg.go.dev/badge/go.acim.net/mig.svg)](https://pkg.go.dev/go.acim.net/mig)
 [![Go Report](https://goreportcard.com/badge/go.acim.net/mig)](https://goreportcard.com/report/go.acim.net/mig)
-![Go Coverage](https://img.shields.io/badge/coverage-97.0%25-brightgreen?style=flat&logo=go)
+![Go Coverage](https://img.shields.io/badge/coverage-96.8%25-brightgreen?style=flat&logo=go)
 
 Go PostgreSQL database schema migration library.
 
@@ -13,7 +13,18 @@ Go PostgreSQL database schema migration library.
 
 In theory, you can also make an implementation for any database using _mig.Database_ interface and instantiate **mig** using _mig.New_ constructor. Since there are other migration libraries supporting multiple databases using Go's standard library's interface _database/sql_, this project has no intention to make such implementations since there is no other library specific to _pgx_ driver. As of now, there is only [tern](https://github.com/jackc/tern) CLI, but it doesn't provide a library.
 
-Custom migration table names must be simple PostgreSQL identifiers such as `schema_migrations` or schema-qualified identifiers such as `app.schema_migrations`. Each identifier part must start with a letter or underscore and contain only letters, digits, and underscores.
+Custom migration table names must be simple PostgreSQL identifiers such as `schema_migrations` or schema-qualified identifiers such as `app.schema_migrations`. Each identifier part must start with a letter or underscore, contain only letters, digits, and underscores, and be at most 63 bytes long.
+
+The pgx adapter owns the migration transaction. Migration SQL must not contain
+top-level transaction-control statements such as `BEGIN`, `COMMIT`, `ROLLBACK`,
+`SAVEPOINT`, or their PostgreSQL equivalents. Such migrations return
+`ErrTransactionControl` without recording the version. The adapter also verifies
+that its transaction remains active before recording each version and before
+committing.
+
+`WithAcquireConnectionTimeout` applies only to `FromPgxPool`, where it limits
+connection acquisition. `New` and `FromPgx` reject that pool-specific option
+with `ErrUnsupportedOption`.
 
 `Migrations.Validate` rejects invalid, duplicate, and out-of-order versions. Use
 `Migrations.TargetVersion` when a caller needs the newest version from a
@@ -74,7 +85,7 @@ or
 - `make test` to run all tests
 - `make stop` so that new `make start` gets clean database
 
-The Makefile uses `podman-compose` by default. Set `COMPOSE=docker-compose` if you want to run the same targets with Docker Compose.
+The Makefile uses `podman compose` by default. Set `COMPOSE=docker compose` if you want to run the same targets with Docker Compose.
 
 The local compose services bind to loopback only: PostgreSQL is available at `127.0.0.1:5432`, and Adminer is available at `http://127.0.0.1:8080`.
 

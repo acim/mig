@@ -9,13 +9,16 @@ jobs:
   actionlint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Check immutable Actions references
+        run: .github/scripts/check-actions-pinned.sh
 
       - uses: raven-actions/actionlint@v2
 
   check:
     needs: actionlint
-    uses: ectobit/reusable-workflows/.github/workflows/go-check.yaml@main
+    uses: ectobit/reusable-workflows/.github/workflows/go-check.yaml@a43da1d227e072563ba6ec19275140a1e465af63
     with:
       lint-command: make lint
 
@@ -36,9 +39,9 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
 
