@@ -107,6 +107,11 @@ func TestFromDirReturnsInvalidVersionErrorForZeroVersion(t *testing.T) {
 			if !errors.Is(err, mig.ErrInvalidVersion) {
 				t.Fatalf("FromDir() error=%v; want invalid version error", err)
 			}
+			want := mig.ErrInvalidVersion.Error() +
+				": version must be between 1 and 9223372036854775807 in " + name
+			if err.Error() != want {
+				t.Fatalf("FromDir() error=%q; want %q", err, want)
+			}
 		})
 	}
 }
@@ -124,6 +129,10 @@ func TestFromDirReturnsInvalidVersionErrorForOverflowingVersion(t *testing.T) {
 	if !errors.Is(err, mig.ErrInvalidVersion) {
 		t.Fatalf("FromDir() error=%v; want invalid version error", err)
 	}
+	want := mig.ErrInvalidVersion.Error() + ": unparseable version in " + name
+	if err.Error() != want {
+		t.Fatalf("FromDir() error=%q; want %q", err, want)
+	}
 }
 
 func TestFromDirReturnsInvalidVersionErrorForPostgresBigintOverflow(t *testing.T) {
@@ -138,6 +147,11 @@ func TestFromDirReturnsInvalidVersionErrorForPostgresBigintOverflow(t *testing.T
 	_, err := mig.FromDir(dir)
 	if !errors.Is(err, mig.ErrInvalidVersion) {
 		t.Fatalf("FromDir() error=%v; want invalid version error", err)
+	}
+	want := mig.ErrInvalidVersion.Error() +
+		": version must be between 1 and 9223372036854775807 in " + name
+	if err.Error() != want {
+		t.Fatalf("FromDir() error=%q; want %q", err, want)
 	}
 }
 
@@ -179,6 +193,10 @@ func TestFromDirReturnsDuplicateVersionError(t *testing.T) {
 	if !errors.Is(err, mig.ErrDuplicateVersion) {
 		t.Fatalf("FromDir() error=%v; want duplicate version error", err)
 	}
+	want := mig.ErrDuplicateVersion.Error() + ": 1-two.sql duplicates 001-one.sql"
+	if err.Error() != want {
+		t.Fatalf("FromDir() error=%q; want %q", err, want)
+	}
 }
 
 func TestMigrationsValidateRejectsDuplicateVersion(t *testing.T) {
@@ -208,7 +226,8 @@ func TestMigrationsValidateRejectsNonAdjacentDuplicateVersion(t *testing.T) {
 	if !errors.Is(err, mig.ErrDuplicateVersion) {
 		t.Fatalf("Validate() error=%v; want duplicate version error", err)
 	}
-	want := "duplicate version: migration at index 2 from 001-duplicate.sql with version 1 duplicates " +
+	want := mig.ErrDuplicateVersion.Error() +
+		": migration at index 2 from 001-duplicate.sql with version 1 duplicates " +
 		"migration at index 0 from 001-first.sql with version 1"
 	if err.Error() != want {
 		t.Fatalf("Validate() error=%q; want %q", err, want)
@@ -270,7 +289,8 @@ func TestMigrationsValidateDescribesPathlessOutOfOrderVersions(t *testing.T) {
 	if !errors.Is(err, mig.ErrOutOfOrderVersion) {
 		t.Fatalf("Validate() error=%v; want out-of-order version error", err)
 	}
-	want := "migration version out of order: migration at index 1 with version 1 follows " +
+	want := mig.ErrOutOfOrderVersion.Error() +
+		": migration at index 1 with version 1 follows " +
 		"migration at index 0 with version 2"
 	if err.Error() != want {
 		t.Fatalf("Validate() error=%q; want %q", err, want)

@@ -45,7 +45,7 @@ func FromEmbedFS(fs embed.FS, path string) (Migrations, error) {
 }
 
 func migrations(fS fs.FS, files []fs.DirEntry, path string) (Migrations, error) {
-	seen := make(map[uint64]bool, len(files))
+	seen := make(map[uint64]string, len(files))
 	ms := make(Migrations, 0, len(files))
 
 	for _, file := range files {
@@ -67,12 +67,25 @@ func migrations(fS fs.FS, files []fs.DirEntry, path string) (Migrations, error) 
 		}
 
 		version, err := strconv.ParseUint(id, 10, 64)
-		if err != nil || version == 0 || version > maxPostgresBigintVersion {
-			return nil, fmt.Errorf("%w: %s", ErrInvalidVersion, filepath.Base(fileName))
+		if err != nil {
+			return nil, fmt.Errorf("%w: unparseable version in %s", ErrInvalidVersion, fileName)
+		}
+		if version == 0 || version > maxPostgresBigintVersion {
+			return nil, fmt.Errorf(
+				"%w: version must be between 1 and %d in %s",
+				ErrInvalidVersion,
+				maxPostgresBigintVersion,
+				fileName,
+			)
 		}
 
-		if seen[version] {
-			return nil, fmt.Errorf("%w: %d", ErrDuplicateVersion, version)
+		if first, ok := seen[version]; ok {
+			return nil, fmt.Errorf(
+				"%w: %s duplicates %s",
+				ErrDuplicateVersion,
+				fileName,
+				first,
+			)
 		}
 
 		name := strings.TrimPrefix(fileName, id)
@@ -92,7 +105,7 @@ func migrations(fS fs.FS, files []fs.DirEntry, path string) (Migrations, error) 
 			SQL:     string(sql),
 		})
 
-		seen[version] = true
+		seen[version] = fileName
 	}
 
 	sort.Sort(&ms)
