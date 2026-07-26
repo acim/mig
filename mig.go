@@ -52,7 +52,13 @@ func isNilDatabase(db Database) bool {
 
 	value := reflect.ValueOf(db)
 
-	return value.Kind() == reflect.Pointer && value.IsNil()
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map,
+		reflect.Pointer, reflect.Slice, reflect.UnsafePointer:
+		return value.IsNil()
+	default:
+		return false
+	}
 }
 
 func newMig(ms Migrations, db Database, allowAcquireTimeout bool, opts ...Option) *Mig {
