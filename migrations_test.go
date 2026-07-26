@@ -12,7 +12,7 @@ import (
 	"go.acim.net/mig"
 )
 
-//go:embed migrations
+//go:embed migrations testdata/embed/migrations
 var ms embed.FS
 
 var _ sort.Interface = (*mig.Migrations)(nil)
@@ -45,6 +45,23 @@ func TestFromEmbedFS(t *testing.T) {
 		t.Fatalf("from embed fs: %v", err)
 	}
 
+	assertMigrations(t, got, want)
+}
+
+func TestFromEmbedFSReadsMigrationFromNestedDirectory(t *testing.T) {
+	t.Parallel()
+
+	got, err := mig.FromEmbedFS(ms, "testdata/embed/migrations")
+	if err != nil {
+		t.Fatalf("FromEmbedFS(): %v", err)
+	}
+
+	want := mig.Migrations{{
+		Version: 1,
+		Name:    "nested",
+		Path:    "001-nested.sql",
+		SQL:     "SELECT 1;\n",
+	}}
 	assertMigrations(t, got, want)
 }
 

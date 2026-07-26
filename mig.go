@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
 	"strings"
 	"time"
@@ -16,19 +17,51 @@ type Database interface {
 	Migrate(ctx context.Context, ms Migrations) error
 }
 
-var ErrInvalidTableName = errors.New("invalid table name")
+var (
+	ErrInvalidTableName  = errors.New("invalid table name")
+	ErrNilDatabase       = errors.New("database dependency is nil")
+	ErrUnsupportedOption = errors.New("option is unsupported by constructor")
+)
 
 var tableNamePartPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
+const maxPostgresIdentifierBytes = 63
+
 type Mig struct {
-	timeout time.Duration
-	ms      Migrations
-	db      Database
-	table   string
-	err     error
+	timeout           time.Duration
+	acquireTimeoutSet bool
+	ms                Migrations
+	db                Database
+	table             string
+	err               error
 }
 
 func New(ms Migrations, db Database, opts ...Option) *Mig {
+	m := newMig(ms, db, false, opts...)
+	if m.err == nil && isNilDatabase(db) {
+		m.err = ErrNilDatabase
+	}
+
+	return m
+}
+
+func isNilDatabase(db Database) bool {
+	if db == nil {
+		return true
+	}
+
+	value := reflect.ValueOf(db)
+
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map,
+		reflect.Pointer, reflect.Slice, reflect.UnsafePointer:
+		return value.IsNil()
+	default:
+		return false
+	}
+}
+
+func newMig(ms Migrations, db Database, allowAcquireTimeout bool, opts ...Option) *Mig {
 	m := &Mig{ //nolint:exhaustruct
 		ms:    ms,
 		db:    db,
@@ -38,14 +71,20 @@ func New(ms Migrations, db Database, opts ...Option) *Mig {
 	for _, opt := range opts {
 		opt(m)
 	}
+	if m.err == nil && !allowAcquireTimeout && m.acquireTimeoutSet {
+		m.err = fmt.Errorf("%w: WithAcquireConnectionTimeout", ErrUnsupportedOption)
+	}
 
 	return m
 }
 
 func FromPgxPool(ms Migrations, pool *pgxpool.Pool, opts ...Option) (*Mig, func(), error) {
-	m := New(ms, nil, opts...)
+	m := newMig(ms, nil, true, opts...)
 	if m.err != nil {
 		return nil, nil, m.err
+	}
+	if pool == nil {
+		return nil, nil, ErrNilDatabase
 	}
 
 	ctx := context.Background()
@@ -68,7 +107,14 @@ func FromPgxPool(ms Migrations, pool *pgxpool.Pool, opts ...Option) (*Mig, func(
 }
 
 func FromPgx(ms Migrations, conn *pgx.Conn, opts ...Option) *Mig {
-	m := New(ms, nil, opts...)
+	m := newMig(ms, nil, false, opts...)
+	if m.err != nil {
+		return m
+	}
+	if conn == nil {
+		m.err = ErrNilDatabase
+		return m
+	}
 
 	m.db = newPgxDB(newPgxConn(conn), m.table)
 
@@ -100,9 +146,12 @@ func WithCustomTable(name string) Option {
 	}
 }
 
+// WithAcquireConnectionTimeout limits connection acquisition by FromPgxPool.
+// New and FromPgx reject this pool-specific option with ErrUnsupportedOption.
 func WithAcquireConnectionTimeout(timeout time.Duration) Option {
 	return func(m *Mig) {
 		m.timeout = timeout
+		m.acquireTimeoutSet = true
 	}
 }
 
@@ -113,7 +162,7 @@ func validateTableName(name string) error {
 	}
 
 	for _, part := range parts {
-		if !tableNamePartPattern.MatchString(part) {
+		if len(part) > maxPostgresIdentifierBytes || !tableNamePartPattern.MatchString(part) {
 			return fmt.Errorf("%w: %s", ErrInvalidTableName, name)
 		}
 	}

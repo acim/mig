@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -44,7 +45,7 @@ func FromEmbedFS(fs embed.FS, path string) (Migrations, error) {
 	return migrations(fs, files, path)
 }
 
-func migrations(fS fs.FS, files []fs.DirEntry, path string) (Migrations, error) {
+func migrations(fS fs.FS, files []fs.DirEntry, directory string) (Migrations, error) {
 	seen := make(map[uint64]string, len(files))
 	ms := make(Migrations, 0, len(files))
 
@@ -93,7 +94,7 @@ func migrations(fS fs.FS, files []fs.DirEntry, path string) (Migrations, error) 
 		name = strings.TrimPrefix(name, "_")
 		name = strings.TrimSuffix(name, ext)
 
-		sql, err := fs.ReadFile(fS, filepath.Join(path, fileName))
+		sql, err := fs.ReadFile(fS, path.Join(directory, fileName))
 		if err != nil {
 			return nil, fmt.Errorf("read file: %w", err)
 		}
