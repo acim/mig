@@ -5,19 +5,26 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   actionlint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Test immutable Actions reference check
+        run: .github/scripts/check-actions-pinned_test.sh
 
       - name: Check immutable Actions references
         run: .github/scripts/check-actions-pinned.sh
 
-      - uses: raven-actions/actionlint@v2
+      - uses: raven-actions/actionlint@v2 # v2.2.0
 
   check:
     needs: actionlint
+    # Reviewed main at 2026-07-25; nested version tags are accepted by repository policy.
     uses: ectobit/reusable-workflows/.github/workflows/go-check.yaml@a43da1d227e072563ba6ec19275140a1e465af63
     with:
       lint-command: make lint
@@ -39,9 +46,9 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
 	"strings"
 	"time"
@@ -37,11 +38,21 @@ type Mig struct {
 
 func New(ms Migrations, db Database, opts ...Option) *Mig {
 	m := newMig(ms, db, false, opts...)
-	if m.err == nil && db == nil {
+	if m.err == nil && isNilDatabase(db) {
 		m.err = ErrNilDatabase
 	}
 
 	return m
+}
+
+func isNilDatabase(db Database) bool {
+	if db == nil {
+		return true
+	}
+
+	value := reflect.ValueOf(db)
+
+	return value.Kind() == reflect.Pointer && value.IsNil()
 }
 
 func newMig(ms Migrations, db Database, allowAcquireTimeout bool, opts ...Option) *Mig {

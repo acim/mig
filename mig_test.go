@@ -63,6 +63,12 @@ type dbFake struct {
 	unlockErr       error
 }
 
+type typedNilDatabase struct{}
+
+func (*typedNilDatabase) Migrate(context.Context, mig.Migrations) error {
+	return errors.New("typed nil database was used")
+}
+
 func (db *dbFake) Migrate(ctx context.Context, ms mig.Migrations) (err error) {
 	db.migrateCalled = true
 
@@ -204,6 +210,16 @@ func TestConstructorsRejectNilDatabaseDependencies(t *testing.T) {
 		t.Parallel()
 
 		migrator := mig.New(nil, nil)
+		if err := migrator.Migrate(context.Background()); !errors.Is(err, mig.ErrNilDatabase) {
+			t.Fatalf("Migrate() error=%v; want nil database error", err)
+		}
+	})
+
+	t.Run("New with typed nil", func(t *testing.T) {
+		t.Parallel()
+
+		var db *typedNilDatabase
+		migrator := mig.New(nil, db)
 		if err := migrator.Migrate(context.Background()); !errors.Is(err, mig.ErrNilDatabase) {
 			t.Fatalf("Migrate() error=%v; want nil database error", err)
 		}

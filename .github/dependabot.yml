@@ -3,7 +3,16 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: daily
+      interval: weekly
+      day: sunday
+      time: "09:00"
+      timezone: Europe/Berlin
+    assignees:
+      - acim
+    groups:
+      actions:
+        patterns:
+          - "*"
 
   - package-ecosystem: gomod
     directory: /
