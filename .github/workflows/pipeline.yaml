@@ -26,8 +26,6 @@ jobs:
     needs: actionlint
     # Reviewed main at 2026-07-25; nested version tags are accepted by repository policy.
     uses: ectobit/reusable-workflows/.github/workflows/go-check.yaml@a43da1d227e072563ba6ec19275140a1e465af63
-    with:
-      golangci-lint-version: v2.13.2
 
   test:
     needs: actionlint

@@ -15,7 +15,7 @@ import (
 //go:embed migrations testdata/embed/migrations
 var ms embed.FS
 
-var _ sort.Interface = (*mig.Migrations)(nil)
+var _ sort.Interface = mig.Migrations(nil)
 
 func TestFromDir(t *testing.T) {
 	t.Parallel()

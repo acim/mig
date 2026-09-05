@@ -42,6 +42,37 @@ func TestPgxLockIDUsesCanonicalLedgerIdentity(t *testing.T) {
 	}
 }
 
+func TestLockIdentityRowScan(t *testing.T) {
+	t.Parallel()
+
+	row := lockIdentityRow{database: "mig", schema: "app"}
+	var database, schema string
+
+	if err := row.Scan(&database, &schema); err != nil {
+		t.Fatalf("Scan(): %v", err)
+	}
+	if database != "mig" {
+		t.Errorf("database=%q; want mig", database)
+	}
+	if schema != "app" {
+		t.Errorf("schema=%q; want app", schema)
+	}
+
+	for name, destinations := range map[string][]any{
+		"wrong destination count": {new(string)},
+		"invalid database":        {new(int), new(string)},
+		"invalid schema":          {new(string), new(int)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if err := row.Scan(destinations...); err == nil {
+				t.Fatal("expected an error")
+			}
+		})
+	}
+}
+
 func TestPgxMigrateSerializesQualifiedAndUnqualifiedLedgerAliases(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping long test")
@@ -748,22 +779,6 @@ func (lockIdentityConn) Begin(context.Context) (pgx.Tx, error) {
 }
 
 type lockIdentityRow lockIdentityConn
-
-func TestLockIdentityRowScanRejectsInvalidDestinations(t *testing.T) {
-	t.Parallel()
-
-	row := lockIdentityRow{}
-
-	if err := row.Scan(new(string)); err == nil {
-		t.Fatal("expected an error for the wrong destination count")
-	}
-	if err := row.Scan(new(int), new(string)); err == nil {
-		t.Fatal("expected an error for an invalid database destination")
-	}
-	if err := row.Scan(new(string), new(int)); err == nil {
-		t.Fatal("expected an error for an invalid schema destination")
-	}
-}
 
 func (row lockIdentityRow) Scan(dest ...any) error {
 	if len(dest) != 2 {
