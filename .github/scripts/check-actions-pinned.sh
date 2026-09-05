@@ -40,7 +40,7 @@ for file in "${files[@]}"; do
     esac
 
     case "$reference" in
-      ectobit/*)
+      [eE][cC][tT][oO][bB][iI][tT]/*)
         if [[ "$reference" == *@main ]]; then
           continue
         fi

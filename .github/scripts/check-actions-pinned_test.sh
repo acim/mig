@@ -42,6 +42,7 @@ printf '%s\n' \
   '  - uses: ./local-action' \
   '  - uses: docker://alpine:3.23' \
   '  - uses: ectobit/reusable-workflows/.github/workflows/go-check.yaml@main' \
+  '  - uses: Ectobit/reusable-workflows/.github/workflows/go-check.yaml@main' \
   '  - uses: actions/checkout@v7' \
   '  - uses: raven-actions/actionlint@v2' \
   '  - uses: "actions/setup-go@v7"' \
@@ -56,6 +57,9 @@ expect_reference_failure \
   'first-party ectobit reference must use @main'
 expect_reference_failure \
   'ectobit/reusable-workflows/.github/workflows/go-check.yaml@v1' \
+  'first-party ectobit reference must use @main'
+expect_reference_failure \
+  'Ectobit/reusable-workflows/.github/workflows/go-check.yaml@v1' \
   'first-party ectobit reference must use @main'
 
 for reference in \
