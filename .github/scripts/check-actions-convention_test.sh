@@ -3,7 +3,7 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-check_script="$script_dir/check-actions-pinned.sh"
+check_script="$script_dir/check-actions-convention.sh"
 fixture_dir="$(mktemp -d)"
 trap 'rm -rf "$fixture_dir"' EXIT
 
@@ -32,7 +32,7 @@ expect_reference_failure() {
 expect_default_failure() {
   local directory="$1"
   if (cd "$directory" && "$check_script"); then
-    echo "pinning check unexpectedly succeeded in: $directory" >&2
+    echo "convention check unexpectedly succeeded in: $directory" >&2
     exit 1
   fi
 }

@@ -15,10 +15,10 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Test Actions reference convention
-        run: .github/scripts/check-actions-pinned_test.sh
+        run: .github/scripts/check-actions-convention_test.sh
 
       - name: Check Actions reference convention
-        run: .github/scripts/check-actions-pinned.sh
+        run: .github/scripts/check-actions-convention.sh
 
       - uses: raven-actions/actionlint@v2
 
