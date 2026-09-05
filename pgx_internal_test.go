@@ -749,9 +749,38 @@ func (lockIdentityConn) Begin(context.Context) (pgx.Tx, error) {
 
 type lockIdentityRow lockIdentityConn
 
+func TestLockIdentityRowScanRejectsInvalidDestinations(t *testing.T) {
+	t.Parallel()
+
+	row := lockIdentityRow{}
+
+	if err := row.Scan(new(string)); err == nil {
+		t.Fatal("expected an error for the wrong destination count")
+	}
+	if err := row.Scan(new(int), new(string)); err == nil {
+		t.Fatal("expected an error for an invalid database destination")
+	}
+	if err := row.Scan(new(string), new(int)); err == nil {
+		t.Fatal("expected an error for an invalid schema destination")
+	}
+}
+
 func (row lockIdentityRow) Scan(dest ...any) error {
-	*(dest[0].(*string)) = row.database
-	*(dest[1].(*string)) = row.schema
+	if len(dest) != 2 {
+		return fmt.Errorf("scan lock identity: got %d destinations, want 2", len(dest))
+	}
+
+	database, ok := dest[0].(*string)
+	if !ok {
+		return fmt.Errorf("scan lock identity database into %T: want *string", dest[0])
+	}
+	schema, ok := dest[1].(*string)
+	if !ok {
+		return fmt.Errorf("scan lock identity schema into %T: want *string", dest[1])
+	}
+
+	*database = row.database
+	*schema = row.schema
 
 	return nil
 }

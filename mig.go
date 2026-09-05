@@ -62,7 +62,7 @@ func isNilDatabase(db Database) bool {
 }
 
 func newMig(ms Migrations, db Database, allowAcquireTimeout bool, opts ...Option) *Mig {
-	m := &Mig{ //nolint:exhaustruct
+	m := &Mig{
 		ms:    ms,
 		db:    db,
 		table: "schema_migrations",
