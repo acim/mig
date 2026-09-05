@@ -12,6 +12,7 @@ import (
 
 	pgx "github.com/jackc/pgx/v5"
 	pgxpool "github.com/jackc/pgx/v5/pgxpool"
+
 	"go.acim.net/mig"
 )
 
@@ -33,7 +34,7 @@ func TestMigrate(t *testing.T) {
 		t.Fatalf("from embed fs: %v", err)
 	}
 
-	db := &dbFake{} //nolint:exhaustruct
+	db := &dbFake{}
 
 	m := mig.New(ms, db)
 
@@ -132,7 +133,7 @@ func TestMigrateReturnsInvalidTableNameError(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			db := &dbFake{} //nolint:exhaustruct
+			db := &dbFake{}
 			m := mig.New(mig.Migrations{}, db, mig.WithCustomTable(name))
 
 			err := m.Migrate(context.Background())
@@ -150,7 +151,7 @@ func TestMigrateReturnsInvalidTableNameError(t *testing.T) {
 func TestMigrateReturnsInvalidVersionErrorForPostgresBigintOverflow(t *testing.T) {
 	t.Parallel()
 
-	db := &dbFake{} //nolint:exhaustruct
+	db := &dbFake{}
 	m := mig.New(mig.Migrations{{
 		Version: 9223372036854775808,
 		Path:    "9223372036854775808-too-large.sql",
@@ -170,7 +171,7 @@ func TestMigrateReturnsInvalidVersionErrorForPostgresBigintOverflow(t *testing.T
 func TestMigrateRejectsOutOfOrderVersionsBeforeUsingDatabase(t *testing.T) {
 	t.Parallel()
 
-	db := &dbFake{} //nolint:exhaustruct
+	db := &dbFake{}
 	m := mig.New(mig.Migrations{
 		{Version: 2, Path: "002-second.sql", SQL: "SELECT 2"},
 		{Version: 1, Path: "001-first.sql", SQL: "SELECT 1"},
@@ -188,7 +189,7 @@ func TestMigrateRejectsOutOfOrderVersionsBeforeUsingDatabase(t *testing.T) {
 func TestMigrateRejectsDuplicateVersionsBeforeUsingDatabase(t *testing.T) {
 	t.Parallel()
 
-	db := &dbFake{} //nolint:exhaustruct
+	db := &dbFake{}
 	m := mig.New(mig.Migrations{
 		{Version: 1, Path: "001-first.sql", SQL: "SELECT 1"},
 		{Version: 2, Path: "002-second.sql", SQL: "SELECT 2"},
@@ -280,7 +281,7 @@ func TestAcquireConnectionTimeoutIsRejectedOutsideFromPgxPool(t *testing.T) {
 			t.Run("New", func(t *testing.T) {
 				t.Parallel()
 
-				db := &dbFake{} //nolint:exhaustruct
+				db := &dbFake{}
 				migrator := mig.New(nil, db, mig.WithAcquireConnectionTimeout(timeout))
 				if err := migrator.Migrate(context.Background()); !errors.Is(err, mig.ErrUnsupportedOption) {
 					t.Fatalf("Migrate() error=%v; want unsupported option error", err)
@@ -396,7 +397,7 @@ func TestMigrateReturnsUnlockError(t *testing.T) {
 	t.Parallel()
 
 	unlockErr := errors.New("unlock failed")
-	db := &dbFake{unlockErr: unlockErr} //nolint:exhaustruct
+	db := &dbFake{unlockErr: unlockErr}
 	m := mig.New(mig.Migrations{}, db)
 
 	err := m.Migrate(context.Background())
@@ -417,7 +418,7 @@ func TestMigrateJoinsMigrationAndUnlockErrors(t *testing.T) {
 	db := &dbFake{
 		runMigrationErr: runErr,
 		unlockErr:       unlockErr,
-	} //nolint:exhaustruct
+	}
 	m := mig.New(mig.Migrations{{
 		Version: 7,
 		Path:    "007-broken.sql",
@@ -458,19 +459,19 @@ func TestMigrateWrapsSetupErrors(t *testing.T) {
 	}{
 		{
 			name: "lock",
-			db:   &dbFake{lockErr: lockErr}, //nolint:exhaustruct
+			db:   &dbFake{lockErr: lockErr},
 			want: "lock: lock failed",
 			err:  lockErr,
 		},
 		{
 			name: "create schema migrations table",
-			db:   &dbFake{createTableErr: createErr}, //nolint:exhaustruct
+			db:   &dbFake{createTableErr: createErr},
 			want: "create schema migrations table: create failed",
 			err:  createErr,
 		},
 		{
 			name: "last version",
-			db:   &dbFake{lastVersionErr: lastVersionErr}, //nolint:exhaustruct
+			db:   &dbFake{lastVersionErr: lastVersionErr},
 			want: "last version: last version failed",
 			err:  lastVersionErr,
 		},
@@ -502,7 +503,7 @@ func TestMigrateWrapsSetLastVersionError(t *testing.T) {
 	t.Parallel()
 
 	setErr := errors.New("set failed")
-	db := &dbFake{setVersionErr: setErr} //nolint:exhaustruct
+	db := &dbFake{setVersionErr: setErr}
 	m := mig.New(mig.Migrations{{
 		Version: 3,
 		Path:    "003-ok.sql",

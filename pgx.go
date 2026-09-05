@@ -35,7 +35,7 @@ type pgxDB struct {
 }
 
 func newPgxDB(conn pgxConn, tableName string) *pgxDB {
-	db := &pgxDB{ //nolint:exhaustruct
+	db := &pgxDB{
 		table:         sanitizeTableName(tableName),
 		tableLockName: tableName,
 		conn:          conn,

@@ -42,6 +42,37 @@ func TestPgxLockIDUsesCanonicalLedgerIdentity(t *testing.T) {
 	}
 }
 
+func TestLockIdentityRowScan(t *testing.T) {
+	t.Parallel()
+
+	row := lockIdentityRow{database: "mig", schema: "app"}
+	var database, schema string
+
+	if err := row.Scan(&database, &schema); err != nil {
+		t.Fatalf("Scan(): %v", err)
+	}
+	if database != "mig" {
+		t.Errorf("database=%q; want mig", database)
+	}
+	if schema != "app" {
+		t.Errorf("schema=%q; want app", schema)
+	}
+
+	for name, destinations := range map[string][]any{
+		"wrong destination count": {new(string)},
+		"invalid database":        {new(int), new(string)},
+		"invalid schema":          {new(string), new(int)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			if err := row.Scan(destinations...); err == nil {
+				t.Fatal("expected an error")
+			}
+		})
+	}
+}
+
 func TestPgxMigrateSerializesQualifiedAndUnqualifiedLedgerAliases(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping long test")
@@ -750,8 +781,21 @@ func (lockIdentityConn) Begin(context.Context) (pgx.Tx, error) {
 type lockIdentityRow lockIdentityConn
 
 func (row lockIdentityRow) Scan(dest ...any) error {
-	*(dest[0].(*string)) = row.database
-	*(dest[1].(*string)) = row.schema
+	if len(dest) != 2 {
+		return fmt.Errorf("scan lock identity: got %d destinations, want 2", len(dest))
+	}
+
+	database, ok := dest[0].(*string)
+	if !ok {
+		return fmt.Errorf("scan lock identity database into %T: want *string", dest[0])
+	}
+	schema, ok := dest[1].(*string)
+	if !ok {
+		return fmt.Errorf("scan lock identity schema into %T: want *string", dest[1])
+	}
+
+	*database = row.database
+	*schema = row.schema
 
 	return nil
 }

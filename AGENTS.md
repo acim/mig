@@ -16,3 +16,8 @@
 ## GitHub Security
 
 - GitHub CodeQL/code scanning default setup is already enabled for this repository for Go and GitHub Actions, with the default query suite on a weekly schedule.
+
+## GitHub Actions
+
+- Every `ectobit/*` action or reusable workflow tracks `@main` and never overrides tool versions owned by the shared workflow.
+- Every third-party action uses a bare major version tag such as `@v7`.

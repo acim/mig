@@ -109,21 +109,21 @@ func migrations(fS fs.FS, files []fs.DirEntry, directory string) (Migrations, er
 		seen[version] = fileName
 	}
 
-	sort.Sort(&ms)
+	sort.Sort(ms)
 
 	return ms, nil
 }
 
-func (ms *Migrations) Len() int {
-	return len(*ms)
+func (ms Migrations) Len() int {
+	return len(ms)
 }
 
-func (ms *Migrations) Less(i, j int) bool {
-	return (*ms)[i].Version < (*ms)[j].Version
+func (ms Migrations) Less(i, j int) bool {
+	return ms[i].Version < ms[j].Version
 }
 
-func (ms *Migrations) Swap(i, j int) {
-	(*ms)[i], (*ms)[j] = (*ms)[j], (*ms)[i]
+func (ms Migrations) Swap(i, j int) {
+	ms[i], ms[j] = ms[j], ms[i]
 }
 
 type Migration struct {

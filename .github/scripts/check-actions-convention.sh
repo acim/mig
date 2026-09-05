@@ -39,13 +39,24 @@ for file in "${files[@]}"; do
         ;;
     esac
 
-    if [[ "$reference" =~ @[0-9a-fA-F]{40}$ ]] ||
-      [[ "$reference" =~ @v?[0-9]+(\.[0-9]+){0,2}$ ]]; then
-      continue
-    fi
+    case "$reference" in
+      [eE][cC][tT][oO][bB][iI][tT]/*)
+        if [[ "$reference" == *@main ]]; then
+          continue
+        fi
 
-    printf '%s: mutable external Actions reference: %s\n' "$file" "$reference" >&2
-    failed=1
+        printf '%s: first-party ectobit reference must use @main: %s\n' "$file" "$reference" >&2
+        failed=1
+        ;;
+      *)
+        if [[ "$reference" =~ @v[0-9]+$ ]]; then
+          continue
+        fi
+
+        printf '%s: third-party reference must use a major version tag: %s\n' "$file" "$reference" >&2
+        failed=1
+        ;;
+    esac
   done <<<"$output"
 done
 
