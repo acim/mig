@@ -1,6 +1,13 @@
-.PHONY: lint start stop test update
+.PHONY: check lint start stop test update
 
 COMPOSE ?= podman compose
+
+# Mirrors the static gates of ectobit/reusable-workflows go-check.yaml in the
+# same order; update both together. Run before every push, with the affected
+# tests. Tests are separate because CI runs them in its own job.
+check: lint
+	govulncheck ./...
+	go fix -diff ./...
 
 lint:
 	@golangci-lint run
