@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   actionlint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
@@ -28,7 +28,7 @@ jobs:
 
   test:
     needs: actionlint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:18-alpine
