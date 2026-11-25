@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-24.04
     services:
       postgres:
-        image: postgres:18-alpine
+        image: postgres:19-alpine
         env:
           POSTGRES_DB: mig
           POSTGRES_HOST_AUTH_METHOD: trust
